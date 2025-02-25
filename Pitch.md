@@ -6,6 +6,11 @@ and it aims at improving capabilities of current syntax-guided synthesis problem
 Syntax guided synthesis aims at generating programs based
 on providing both syntactic and regular smt constraints.
 
+We learn from the other top 3 solvers from this problem, cvc5, dryadSynth and LoopInvGen and their approaches:
+    - smt techniques
+    - concolic
+    - symbolic 
+
 First we explore the space of candidate programs using simmulated annealing and similar metaheuristic
 to guide a random search,then we separate candidate programs and their intermediaries into failures or successes.
 
