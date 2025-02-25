@@ -2,7 +2,7 @@
 
 
 I am Mihai Munteanu. The title of my thesis is "Fast discard strategy for generating SyGuS programs". 
-The problem my thesis solves is generating syntax-guided synthesis problems 
+The problem my thesis solves the generation of syntax-guided synthesis problems 
 using simmulated annealing to guide a random search and support vector machines 
 to learn from successful/failed generated programs unlike:
 1. DRYADSYNTH : A Concolic SyGuS Solver; which uses dynamic symbolic execution
