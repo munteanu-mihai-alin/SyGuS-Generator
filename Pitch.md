@@ -1,7 +1,7 @@
 
 Hello, my name is Mihai, the title of my thesis is 
 "Fast discard strategy for generating SyGuS programs"
-and it aims at improving capabilities of current syntax-guided synthesis problems solvers present in program synthesis.
+and it aims at improving capabilities of current solvers which deal with the syntax-guided synthesis problems.
 
 Syntax guided synthesis aims at generating programs based
 on providing both syntactic and regular smt constraints.
@@ -16,7 +16,7 @@ to guide a random search,then we separate candidate programs and their intermedi
 
 In the second part we use the cvc5 solver and perform the same process.
 
-We use this information to guide the search in the future for instantly discarding the space of possible programs.
+We use this information to guide the search of possible programs.
 
 It can be useful for a wide-range of problems, most important being invariant generation.
 
