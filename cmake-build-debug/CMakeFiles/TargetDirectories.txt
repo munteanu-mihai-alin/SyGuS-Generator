@@ -1,0 +1,4 @@
+D:/SyGuS-Generator/cmake-build-debug/CMakeFiles/SygusCoding.dir
+D:/SyGuS-Generator/cmake-build-debug/CMakeFiles/test.dir
+D:/SyGuS-Generator/cmake-build-debug/CMakeFiles/edit_cache.dir
+D:/SyGuS-Generator/cmake-build-debug/CMakeFiles/rebuild_cache.dir

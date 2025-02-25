@@ -1,0 +1,148 @@
+"C:\Program Files\JetBrains\CLion 2024.2\bin\cmake\win\x64\bin\cmake.exe" -DCMAKE_BUILD_TYPE=Debug "-DCMAKE_MAKE_PROGRAM=C:/Program Files/JetBrains/CLion 2024.2/bin/ninja/win/x64/ninja.exe" "-DCMAKE_C_COMPILER=C:/Program Files/JetBrains/CLion 2024.2/bin/mingw/bin/gcc.exe" "-DCMAKE_CXX_COMPILER=C:/Program Files/JetBrains/CLion 2024.2/bin/mingw/bin/g++.exe" -G Ninja -S D:\SyGuS-Generator -B D:\SyGuS-Generator\cmake-build-debug
+-- The C compiler identification is GNU 13.1.0
+-- The CXX compiler identification is GNU 13.1.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: C:/Program Files/JetBrains/CLion 2024.2/bin/mingw/bin/gcc.exe - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: C:/Program Files/JetBrains/CLion 2024.2/bin/mingw/bin/g++.exe - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+INCLUDE_FOLDER: D:/SyGuS-Generator/include
+CVC5_INCLUDE: D:\cvc5-Win64-static\include
+CVC5_LIB: D:\cvc5-Win64-static\lib
+incls: 
+CMake Debug Log at CMakeLists.txt:71 (find_package):
+  find_package considered the following paths for Findcvc5.cmake:
+
+    C:/Program Files/JetBrains/CLion 2024.2/bin/cmake/win/x64/share/cmake-3.29/Modules/Findcvc5.cmake
+
+  The file was not found.
+
+  The internally managed CMAKE_FIND_PACKAGE_REDIRECTS_DIR.
+
+    D:/SyGuS-Generator/cmake-build-debug/CMakeFiles/pkgRedirects
+
+  <PackageName>_ROOT CMake variable [CMAKE_FIND_USE_PACKAGE_ROOT_PATH].
+
+    none
+
+  CMAKE_PREFIX_PATH variable [CMAKE_FIND_USE_CMAKE_PATH].
+
+    none
+
+  CMAKE_FRAMEWORK_PATH and CMAKE_APPBUNDLE_PATH variables
+  [CMAKE_FIND_USE_CMAKE_PATH].
+
+    none
+
+  Env variable cvc5_DIR [CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH].
+
+    none
+
+  CMAKE_PREFIX_PATH env variable [CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH].
+
+    none
+
+  CMAKE_FRAMEWORK_PATH and CMAKE_APPBUNDLE_PATH env variables
+  [CMAKE_FIND_USE_CMAKE_ENVIRONMENT_PATH].
+
+    none
+
+  Paths specified by the find_package HINTS option.
+
+    none
+
+  Standard system environment variables
+  [CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH].
+
+    C:/Program Files/JetBrains/CLion 2024.2/bin/mingw
+    D:/opam
+    C:/Program Files/opam
+    C:/Windows/System32
+    C:/Windows
+    C:/Windows/System32/wbem
+    C:/Windows/System32/WindowsPowerShell/v1.0
+    C:/Windows/System32/OpenSSH
+    C:/Program Files/dotnet
+    C:/Program Files (x86)/Windows Kits/10/Windows Performance Toolkit
+    C:/Program Files/Git/cmd
+    C:/Users/munte/AppData/Local/Programs/Python/Python312
+    C:/Program Files/TortoiseHg
+    D:/msys64/usr
+    D:/cvc5-Win64-static/lib/cmake/cvc5
+    D:/cvc5-Win64-static/lib
+    C:/Users/munte/AppData/Local/Programs/Python/Launcher
+    C:/Users/munte/AppData/Local/Microsoft/WindowsApps
+    D:/PyCharm 2023.3.4
+    D:/SyGuS-Generator/cmake-build-debug
+    C:/Users/munte/.dotnet/tools
+    C:/Users/munte/AppData/Local/Programs/Microsoft VS Code
+    C:/Program Files/JetBrains/CLion 2024.2/bin/ninja/win/x64
+
+  CMake User Package Registry [CMAKE_FIND_USE_PACKAGE_REGISTRY].
+
+    none
+
+  CMake variables defined in the Platform file
+  [CMAKE_FIND_USE_CMAKE_SYSTEM_PATH].
+
+    C:/Program Files
+    C:/Program Files (x86)
+    C:/Program Files/JetBrains/CLion 2024.2/bin/cmake/win/x64
+    C:/Program Files (x86)/SygusCoding
+
+  CMake System Package Registry
+  [CMAKE_FIND_PACKAGE_NO_SYSTEM_PACKAGE_REGISTRY].
+
+    none
+
+  Paths specified by the find_package PATHS option.
+
+    none
+
+  find_package considered the following locations for cvc5's Config module:
+
+    D:/SyGuS-Generator/cmake-build-debug/CMakeFiles/pkgRedirects/cvc5Config.cmake
+    D:/SyGuS-Generator/cmake-build-debug/CMakeFiles/pkgRedirects/cvc5-config.cmake
+    C:/Program Files/JetBrains/CLion 2024.2/bin/mingw/cvc5Config.cmake
+    C:/Program Files/JetBrains/CLion 2024.2/bin/mingw/cvc5-config.cmake
+    D:/opam/cvc5Config.cmake
+    D:/opam/cvc5-config.cmake
+    C:/Windows/System32/cvc5Config.cmake
+    C:/Windows/System32/cvc5-config.cmake
+    C:/Windows/cvc5Config.cmake
+    C:/Windows/cvc5-config.cmake
+    C:/Windows/System32/wbem/cvc5Config.cmake
+    C:/Windows/System32/wbem/cvc5-config.cmake
+    C:/Windows/System32/WindowsPowerShell/v1.0/cvc5Config.cmake
+    C:/Windows/System32/WindowsPowerShell/v1.0/cvc5-config.cmake
+    C:/Windows/System32/OpenSSH/cvc5Config.cmake
+    C:/Windows/System32/OpenSSH/cvc5-config.cmake
+    C:/Program Files/dotnet/cvc5Config.cmake
+    C:/Program Files/dotnet/cvc5-config.cmake
+    C:/Program Files (x86)/Windows Kits/10/Windows Performance Toolkit/cvc5Config.cmake
+    C:/Program Files (x86)/Windows Kits/10/Windows Performance Toolkit/cvc5-config.cmake
+    C:/Program Files/Git/cmd/cvc5Config.cmake
+    C:/Program Files/Git/cmd/cvc5-config.cmake
+    C:/Users/munte/AppData/Local/Programs/Python/Python312/cvc5Config.cmake
+    C:/Users/munte/AppData/Local/Programs/Python/Python312/cvc5-config.cmake
+    C:/Program Files/TortoiseHg/cvc5Config.cmake
+    C:/Program Files/TortoiseHg/cvc5-config.cmake
+    D:/msys64/usr/cvc5Config.cmake
+    D:/msys64/usr/cvc5-config.cmake
+    D:/cvc5-Win64-static/lib/cmake/cvc5/cvc5Config.cmake
+
+  The file was found at
+
+    D:/cvc5-Win64-static/lib/cmake/cvc5/cvc5Config.cmake
+
+
+
+CVC_LIB: D:\cvc5-Win64-static\lib\libcvc5.a
+-- Configuring done (2.9s)
+-- Generating done (0.0s)
+-- Build files have been written to: D:/SyGuS-Generator/cmake-build-debug
