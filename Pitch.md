@@ -3,14 +3,15 @@ Hello, my name is Mihai, the title of my thesis is
 "Fast discard strategy for generating SyGuS programs"
 and it aims at improving capabilities of current syntax-guided synthesis problems solvers present in program synthesis.
 
-First we explore the space of candidate programs using simmulated annealing and similar metaheuristic algorithms
-In the second step we use cvc5 solver and analyze where symmetry breaking lemmas 
+Syntax guided synthesis aims at generating programs based
+on providing both syntactic and regular smt constraints.
 
-Syntax guided synthesis aims at generating programs based 
-on providing both syntactic and regular smt constraints. 
+First we explore the space of candidate programs using simmulated annealing and similar metaheuristic
+to guide a random search,then we separate candidate programs and their intermediaries into failures or successes.
 
+In the second part we use the cvc5 solver and perform the same process.
 
-It can be usedul for a wide-range of problems, most important being invariant generation.
+It can be useful for a wide-range of problems, most important being invariant generation.
 
 #https://saswat.padhi.me/assets/pdf/pldi2016_pie.pdf
 #https://engineering.purdue.edu/~xqiu/DryadSynth.pdf
