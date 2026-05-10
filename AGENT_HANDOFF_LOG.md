@@ -188,3 +188,81 @@ Suggested commit:
 ```bash
 git commit -m "add format and ucrt build helpers"
 ```
+
+## [2026-05-11] - Add solver path, dependency scripts, CI bundle flow, and benchmark upgrades
+
+Model / agent:
+- GPT-5.5 Thinking, reasoning model
+
+Source state:
+- Local repository on `main` after commit `c132c21`
+
+User request:
+- Do the next full repo step:
+  - add local and CI dependency-bundle scripts
+  - reconnect the project to a real AST-based solver path
+  - upgrade tests and benchmark runner
+  - perform repo cleanup where safe
+
+Files changed:
+- `CMakeLists.txt` - added `sygus_solver` / `sygus_solve`, optional cvc5 package wiring, and solver-aware test linking
+- `README.md` - rewritten around the real local build, dependency bundle, solver, benchmark, and CI flows
+- `.gitignore` - expanded cleanup ignores for `agent/`, archived cvc5 drops, and root-level ad-hoc benchmark files
+- `.github/workflows/ci.yml` - now restores a reusable Linux cvc5 bundle, runs solver-aware CI, and rebuilds the release asset only on `%BUILD_RELEASE`
+- `include/sygus_solver.hpp` - added solver API and result/option structs
+- `src/sygus_solver.cpp` - added AST-based bottom-up enumerative synthesis, sample evaluation, optional cvc5 verification, and unsupported-fragment handling
+- `src/sygus_solve_main.cpp` - added solver CLI with JSON/text output
+- `tests/sygus_ut.cpp` - added solver unit coverage for a simple synth-fun and invariant unsupported-path behavior
+- `tests/sygus_mt.cpp` - added solver module coverage for `lia_max2`, `bv_double`, and invariant unsupported behavior
+- `scripts/build_third_party_dependencies_ucrt.sh` - added local UCRT cvc5 dependency-prefix build script
+- `scripts/rebuild_linux_deps_ci.sh` - added Linux cvc5 dependency-bundle builder for CI release assets
+- `scripts/build_ucrt.sh` - now optionally builds dependencies, auto-uses the local cvc5 prefix, and smoke-runs `sygus_solve`
+- `scripts/run_coverage_ci.sh` - now auto-uses the Linux dependency prefix when present
+- `scripts/check_clang_format.sh` - now checks the new solver-owned files too
+- `scripts/format_code.sh` - now formats the new solver-owned files too
+- `scripts/run_sygus_benchmarks.py` - now runs `sygus_solve --json`, compares against real cvc5 command templates, and summarizes by track/status
+- `AGENT_HANDOFF_LOG.md` - recorded this interaction
+
+Deletions / removals:
+- Removed temporary local probe directories used during dependency-build experiments
+- Removed `scripts/__pycache__/`
+
+Steps taken:
+1. Inspected the new AST parser and the old prototype solver code, then chose to add a clean new solver path in separate repo-owned files rather than mutate the user-edited prototype files.
+2. Implemented a bottom-up AST-based enumerative solver for the current narrow scope:
+   - single `synth-fun`
+   - current focus on `LIA` and small `BV` grammars
+   - sample-driven synthesis with optional exact cvc5 verification
+3. Hooked the solver into CMake with a `sygus_solve` CLI and kept the solver build optional on the presence of a cvc5 package/prefix.
+4. Extended `ut` / `mt` coverage to include real solver behavior on benchmark-style inputs instead of only parser structure checks.
+5. Added local and CI dependency scripts modeled on the `trading-system` asset-bundle flow, with `%BUILD_RELEASE` gating the release-asset rebuild path.
+6. Reworked the benchmark runner so it now measures solver status and groups results by benchmark track/category.
+7. Cleaned repo-local clutter by ignoring ad-hoc benchmark drops and old archived cvc5 directories, and by removing temporary validation directories.
+
+Validation performed:
+- `./scripts/format_code.sh` with the UCRT toolchain in PATH
+- `./scripts/check_clang_format.sh`
+- `bash -n scripts/build_third_party_dependencies_ucrt.sh`
+- `bash -n scripts/rebuild_linux_deps_ci.sh`
+- `python -m py_compile scripts/run_sygus_benchmarks.py`
+- `STAGE_THIRD_PARTY=0 CLEAN_BUILD=1 ./scripts/build_ucrt.sh`
+  - configure/build/tests/smoke succeeded
+- `build-ucrt/sygus_solve.exe tests/data/lia_max2.sl --no-cvc5-verify --json`
+  - solved with `(ite (<= x y) y x)`
+- `build-ucrt/sygus_solve.exe tests/data/bv_double.sl --no-cvc5-verify --json`
+  - solved with `(bvadd x x)`
+- `python scripts/run_sygus_benchmarks.py tests/data --timeout 10 --max-benchmarks 3 --solver-command "...sygus_solve.exe --json {input}" --baseline-command "...sygus_solve.exe --json --no-cvc5-verify {input}" --output results/benchmark-runs/self-check.json`
+  - solver self-check completed with `solved=2`, `unsupported=1`
+- `DRY_RUN=1 ./scripts/build_third_party_dependencies_ucrt.sh`
+- `DRY_RUN=1 ./scripts/rebuild_linux_deps_ci.sh`
+
+Known risks / follow-up:
+- The actual UCRT cvc5 dependency build still fails in this environment. The script now gets much further, but cvc5 still configures/builds with `clang` instead of the intended `gcc`, and the build then fails on:
+  - `thread_local ... cannot be dllexport`
+- The Linux dependency-bundle script is validated in dry-run mode only from this Windows environment. It still needs a real Linux runner pass.
+- The current solver intentionally supports only a narrow starter fragment. It is useful for real project scaffolding and benchmark measurement, but it is not yet a broad SyGuS competition solver.
+
+Suggested commit:
+```bash
+git commit -m "add solver and ci deps flow"
+```

@@ -1,4 +1,5 @@
 #include "sygus_parser.hpp"
+#include "sygus_solver.hpp"
 
 #include <string>
 
@@ -53,6 +54,41 @@ int main() {
     EXPECT_EQ(context, productions.size(), static_cast<size_t>(4));
     EXPECT_EQ(context, productions[3][0]->symbol, std::string("+"));
     EXPECT_EQ(context, productions[3][1]->symbol, std::string("Start"));
+  }
+
+  {
+    const auto program = parser.parse(
+        "(set-logic LIA)\n"
+        "(synth-fun id ((x Int)) Int ((Start Int (x 0 1 (+ Start Start))))\n"
+        ")\n"
+        "(declare-var x Int)\n"
+        "(constraint (= (id x) x))\n"
+        "(check-synth)\n");
+    SyGuSSolver solver;
+    SolveOptions options;
+    options.require_cvc5_verification = false;
+    const auto result = solver.solve(program, options);
+    EXPECT_EQ(context, SyGuSSolver::statusToString(result.status),
+              std::string("solved"));
+    EXPECT_EQ(context, result.solution, std::string("x"));
+  }
+
+  {
+    const auto program = parser.parse(
+        "(set-logic LIA)\n"
+        "(synth-inv inv_fun ((x Int)))\n"
+        "(declare-var x Int)\n"
+        "(define-fun pre_fun ((x Int)) Bool true)\n"
+        "(define-fun trans_fun ((x Int) (x! Int)) Bool true)\n"
+        "(define-fun post_fun ((x Int)) Bool true)\n"
+        "(inv-constraint inv_fun pre_fun trans_fun post_fun)\n"
+        "(check-synth)\n");
+    SyGuSSolver solver;
+    const auto result = solver.solve(program);
+    EXPECT_EQ(context, SyGuSSolver::statusToString(result.status),
+              std::string("unsupported"));
+    EXPECT_TRUE(context, result.message.find("Invariant synthesis") !=
+                             std::string::npos);
   }
 
   return context.failures == 0 ? 0 : 1;

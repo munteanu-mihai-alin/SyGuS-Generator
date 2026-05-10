@@ -5,9 +5,10 @@ set -euo pipefail
 #
 # This helper mirrors the local workflow shape from the trading-system repo:
 # 1. optionally stage required third-party source trees
-# 2. configure a repo-local CMake build directory
-# 3. build the parser targets
-# 4. run tests and a small parser smoke check
+# 2. optionally build the local dependency prefix under dependencies/ucrt64
+# 3. configure a repo-local CMake build directory
+# 4. build the parser/solver targets
+# 5. run tests and a small solver smoke check
 #
 # Environment overrides:
 #   BUILD_DIR=/abs/path/to/build-dir
@@ -15,6 +16,7 @@ set -euo pipefail
 #   GENERATOR=Ninja
 #   CLEAN_BUILD=0
 #   STAGE_THIRD_PARTY=1
+#   BUILD_DEPENDENCIES=0
 #   RUN_TESTS=1
 #   RUN_SMOKE=1
 
@@ -23,8 +25,10 @@ BUILD_DIR="${BUILD_DIR:-${ROOT_DIR}/build-ucrt}"
 BUILD_TYPE="${BUILD_TYPE:-Debug}"
 GENERATOR="${GENERATOR:-Ninja}"
 STAGE_THIRD_PARTY="${STAGE_THIRD_PARTY:-1}"
+BUILD_DEPENDENCIES="${BUILD_DEPENDENCIES:-0}"
 RUN_TESTS="${RUN_TESTS:-1}"
 RUN_SMOKE="${RUN_SMOKE:-1}"
+DEPS_PREFIX="${ROOT_DIR}/dependencies/ucrt64/install"
 
 ensure_tool() {
   local tool="$1"
@@ -57,6 +61,12 @@ if [[ "${STAGE_THIRD_PARTY}" == "1" ]]; then
   "${ROOT_DIR}/scripts/stage_third_party_sources_ucrt.sh"
 fi
 
+if [[ "${BUILD_DEPENDENCIES}" == "1" ]]; then
+  echo "==> Building UCRT dependency prefix"
+  chmod +x "${ROOT_DIR}/scripts/build_third_party_dependencies_ucrt.sh"
+  "${ROOT_DIR}/scripts/build_third_party_dependencies_ucrt.sh"
+fi
+
 if [[ "${CLEAN_BUILD:-0}" == "1" ]]; then
   echo "==> Removing ${BUILD_DIR}"
   rm -rf "${BUILD_DIR}"
@@ -72,6 +82,11 @@ configure_args=(
 
 if [[ -n "${CXX:-}" ]]; then
   configure_args+=("-DCMAKE_CXX_COMPILER=${CXX}")
+fi
+
+if [[ -d "${DEPS_PREFIX}" ]]; then
+  configure_args+=("-DCMAKE_PREFIX_PATH=${DEPS_PREFIX}")
+  configure_args+=("-DSYGUS_REQUIRE_CVC5=ON")
 fi
 
 if [[ "$#" -gt 0 ]]; then
@@ -90,16 +105,21 @@ if [[ "${RUN_TESTS}" == "1" ]]; then
 fi
 
 if [[ "${RUN_SMOKE}" == "1" ]]; then
-  parser_cli="${BUILD_DIR}/sygus_parse"
-  if [[ -x "${parser_cli}.exe" ]]; then
-    parser_cli="${parser_cli}.exe"
+  solver_cli="${BUILD_DIR}/sygus_solve"
+  if [[ -x "${solver_cli}.exe" ]]; then
+    solver_cli="${solver_cli}.exe"
   fi
 
-  if [[ -x "${parser_cli}" ]]; then
-    echo "==> Smoke parsing tests/data/lia_max2.sl"
-    "${parser_cli}" "${ROOT_DIR}/tests/data/lia_max2.sl"
+  if [[ -x "${solver_cli}" ]]; then
+    echo "==> Smoke solving tests/data/lia_max2.sl"
+    if [[ -d "${DEPS_PREFIX}" ]]; then
+      "${solver_cli}" --json "${ROOT_DIR}/tests/data/lia_max2.sl"
+    else
+      "${solver_cli}" --json --no-cvc5-verify \
+        "${ROOT_DIR}/tests/data/lia_max2.sl"
+    fi
   else
-    echo "WARNING: parser CLI was not found under ${BUILD_DIR}; skipping smoke run."
+    echo "WARNING: solver CLI was not found under ${BUILD_DIR}; skipping smoke run."
   fi
 fi
 
