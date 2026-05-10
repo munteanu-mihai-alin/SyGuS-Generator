@@ -49,7 +49,6 @@ third-party/cvc5/
 third-party/sygus-benchmarks/
 third-party/_downloads/
 
-old/cvc5/
 cvc5-Linux-x86_64-static-gpl-121/
 
 # Local ad-hoc benchmark drops should live under handcrafted-samples/.
