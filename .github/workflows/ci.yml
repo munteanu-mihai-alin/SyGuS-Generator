@@ -8,24 +8,26 @@ permissions:
   contents: write
 
 jobs:
-  build-and-test:
+  prepare-linux-deps:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Install base dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake g++ ninja-build clang-format python3 \
+          sudo apt-get install -y cmake g++ ninja-build python3 \
             gh git curl zip libgmp-dev
 
-      - name: Check formatting
+      - name: Build Linux dependency bundle for this run
+        if: github.event_name == 'push' && contains(github.event.head_commit.message, '%BUILD_RELEASE')
         run: |
-          chmod +x scripts/check_clang_format.sh
-          ./scripts/check_clang_format.sh
+          chmod +x scripts/rebuild_linux_deps_ci.sh
+          ./scripts/rebuild_linux_deps_ci.sh
 
-      - name: Restore Linux dependency bundle
+      - name: Download existing Linux dependency bundle
+        if: ${{ !(github.event_name == 'push' && contains(github.event.head_commit.message, '%BUILD_RELEASE')) }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -37,6 +39,43 @@ jobs:
             echo "Trigger a push with %BUILD_RELEASE to build it."
             exit 1
           fi
+
+      - name: Verify Linux dependency bundle
+        run: |
+          test -f dependencies/linux/sygus-linux-deps-ubuntu-latest.tar.gz
+
+      - name: Upload Linux dependency bundle for this workflow
+        uses: actions/upload-artifact@v4
+        with:
+          name: sygus-linux-deps-bundle
+          path: dependencies/linux/sygus-linux-deps-ubuntu-latest.tar.gz
+
+  build-and-test:
+    needs: prepare-linux-deps
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake g++ ninja-build clang-format python3 \
+            libgmp-dev
+
+      - name: Check formatting
+        run: |
+          chmod +x scripts/check_clang_format.sh
+          ./scripts/check_clang_format.sh
+
+      - name: Download Linux dependency bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: sygus-linux-deps-bundle
+          path: dependencies/linux
+
+      - name: Restore Linux dependency bundle
+        run: |
           tar -xzf dependencies/linux/sygus-linux-deps-ubuntu-latest.tar.gz -C .
           test -d dependencies/linux/install
 
@@ -94,6 +133,7 @@ jobs:
           path: results/benchmark-runs/ci-self-check.json
 
   coverage:
+    needs: prepare-linux-deps
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -102,21 +142,16 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake g++ ninja-build lcov python3 \
-            gh git curl zip libgmp-dev
+          sudo apt-get install -y cmake g++ ninja-build lcov python3 libgmp-dev
+
+      - name: Download Linux dependency bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: sygus-linux-deps-bundle
+          path: dependencies/linux
 
       - name: Restore Linux dependency bundle
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          mkdir -p dependencies/linux
-          if ! gh release download sygus-linux-deps \
-            -p 'sygus-linux-deps-ubuntu-latest.tar.gz' \
-            -D dependencies/linux; then
-            echo "Missing sygus-linux-deps release asset."
-            echo "Trigger a push with %BUILD_RELEASE to build it."
-            exit 1
-          fi
           tar -xzf dependencies/linux/sygus-linux-deps-ubuntu-latest.tar.gz -C .
           test -d dependencies/linux/install
 
@@ -141,26 +176,19 @@ jobs:
 
   linux-deps-release:
     if: github.event_name == 'push' && contains(github.event.head_commit.message, '%BUILD_RELEASE')
+    needs: prepare-linux-deps
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install base dependencies
+      - name: Install GitHub CLI
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake g++ ninja-build python3 gh git curl zip libgmp-dev
+          sudo apt-get install -y gh
 
-      - name: Build Linux dependency bundle
-        run: |
-          chmod +x scripts/rebuild_linux_deps_ci.sh
-          ./scripts/rebuild_linux_deps_ci.sh
-
-      - name: Upload Linux dependency artifact
-        uses: actions/upload-artifact@v4
+      - name: Download Linux dependency bundle
+        uses: actions/download-artifact@v4
         with:
-          name: sygus-linux-deps-ubuntu-latest
-          path: dependencies/linux/sygus-linux-deps-ubuntu-latest.tar.gz
+          name: sygus-linux-deps-bundle
+          path: dependencies/linux
 
       - name: Create or update Linux dependency release asset
         env:
