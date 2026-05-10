@@ -32,12 +32,17 @@ build.ninja
 *.log
 *.tmp
 *.temp
+*.pyc
+
+__pycache__/
 
 results/
 coverage/
 coverage-html/
 coverage.info
 coverage.filtered.info
+
+dependencies/
 
 third-party/cvc5/
 third-party/sygus-benchmarks/

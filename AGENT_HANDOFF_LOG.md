@@ -143,3 +143,48 @@ Suggested commit:
 ```bash
 git commit -m "build(third-party): add ucrt source staging scripts"
 ```
+
+## [2026-05-10] - Add format and local build helpers
+
+Model / agent:
+- GPT-5.5 Thinking, reasoning model
+
+Source state:
+- Local repository on `main` after the parser-first setup commit
+
+User request:
+- Add a format script similar to the one in `D:\trading-system`.
+- Add a local build helper mirroring the other project's day-to-day workflow.
+- Write down the next-step plan for dependency staging, release assets, and a real SyGuS project flow.
+
+Files changed:
+- `.gitignore` - now ignores Python bytecode caches and future `dependencies/` build outputs
+- `scripts/format_code.sh` - formats the parser-owned C++ files with the repo's `.clang-format`
+- `scripts/build_ucrt.sh` - stages third-party sources, configures a UCRT build, builds targets, runs tests, and performs a parser smoke check
+- `README.md` - documents formatting, the new local build helper, and the planned dependency/release-asset workflow
+- `AGENT_HANDOFF_LOG.md` - recorded this handoff entry
+
+Deletions / removals:
+- none
+
+Steps taken:
+1. Inspected `D:\trading-system`'s `format_code.sh`, `check_clang_format.sh`, and CI release-bundle pattern.
+2. Added a matching `scripts/format_code.sh` to this repo, but intentionally scoped it to parser-owned files so it does not reformat the legacy solver files that are still being migrated.
+3. Added `scripts/build_ucrt.sh` as a repo-local helper for the common stage-configure-build-test-smoke workflow.
+4. Documented the next dependency steps needed to move from parser-first into a real solver project with reusable CI dependency bundles.
+
+Validation performed:
+- read-back inspection of the new script contents
+- `bash -n scripts/format_code.sh`
+- `bash -n scripts/build_ucrt.sh`
+- `STAGE_THIRD_PARTY=0 CLEAN_BUILD=1 ./scripts/build_ucrt.sh`
+  - configure/build/test/smoke succeeded under the local UCRT toolchain
+
+Known risks / follow-up:
+- `scripts/build_ucrt.sh` currently builds only the parser-first target set; it does not yet build a cvc5 dependency prefix because the solver target has not been reconnected to the new AST pipeline.
+- The CI release-asset plan is documented but not yet implemented; the intended next step is to add `build_third_party_dependencies_ucrt.sh` and `rebuild_linux_deps_ci.sh` for this repository.
+
+Suggested commit:
+```bash
+git commit -m "add format and ucrt build helpers"
+```
