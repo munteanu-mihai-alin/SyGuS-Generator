@@ -1,0 +1,70 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake g++ ninja-build clang-format python3
+
+      - name: Check formatting
+        run: |
+          chmod +x scripts/check_clang_format.sh
+          ./scripts/check_clang_format.sh
+
+      - name: Configure
+        run: |
+          cmake -S . -B build -G Ninja -D SYGUS_BUILD_TESTS=ON
+
+      - name: Build
+        run: |
+          cmake --build build -j"$(nproc)"
+
+      - name: Test
+        run: |
+          ctest --test-dir build --output-on-failure
+
+      - name: Smoke parser CLI
+        run: |
+          ./build/sygus_parse tests/data/lia_max2.sl
+
+      - name: Validate benchmark runner
+        run: |
+          python3 -m py_compile scripts/run_sygus_benchmarks.py
+
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake g++ ninja-build lcov python3
+
+      - name: Run coverage
+        run: |
+          chmod +x scripts/run_coverage_ci.sh
+          ./scripts/run_coverage_ci.sh
+
+      - name: Upload coverage HTML
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html
+          path: build-coverage/coverage-html
+
+      - name: Upload coverage LCOV
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-lcov
+          path: build-coverage/coverage.filtered.info
