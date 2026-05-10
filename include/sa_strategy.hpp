@@ -7,7 +7,7 @@ public:
     SAStrategy(double initial_temp = 1000.0, double cooling_rate = 0.995);
     std::shared_ptr<GrammarTerm> synthesize(
         const SyGuSProgram& program,
-        cvc5::TermManager& tm,
+        /*cvc5::TermManager& tm,*/
         cvc5::Solver& solver,
         std::vector<cvc5::Term>& counterexamples
     ) override;
@@ -24,7 +24,7 @@ private:
     );
     double evaluateCost(
         const std::shared_ptr<GrammarTerm>& candidate,
-        cvc5::TermManager& tm,
+        /*cvc5::TermManager& tm,*/
         cvc5::Solver& solver,
         const std::vector<cvc5::Term>& counterexamples
     );

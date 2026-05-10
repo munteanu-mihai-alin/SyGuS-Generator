@@ -1,13 +1,13 @@
 #pragma once
 #include "sygus_parser.hpp"
 #include <cvc5/cvc5.h>
-
+#include <algorithm>
 class SynthesisStrategy {
 public:
     virtual ~SynthesisStrategy() = default;
     virtual std::shared_ptr<GrammarTerm> synthesize(
         const SyGuSProgram& program,
-        cvc5::TermManager& tm,
+        /*cvc5::TermManager& tm,*/
         cvc5::Solver& solver,
         std::vector<cvc5::Term>& counterexamples
     ) = 0;
@@ -21,7 +21,7 @@ protected:
 
     cvc5::Term termToCVC5(
         const std::shared_ptr<GrammarTerm>& term,
-        cvc5::TermManager& tm,
+        /*cvc5::TermManager& tm,*/
         cvc5::Solver& solver,
         const std::map<std::string, cvc5::Term>& var_map
     );
@@ -29,7 +29,7 @@ protected:
     bool verifyCandidate(
         const std::shared_ptr<GrammarTerm>& candidate,
         const SyGuSProgram& program,
-        cvc5::TermManager& tm,
+        /*cvc5::TermManager& tm,*/
         cvc5::Solver& solver,
         std::vector<cvc5::Term>& counterexamples);
 
@@ -40,7 +40,7 @@ protected:
 
     static cvc5::Term parseConstraintToCVC5(
         const std::vector<std::string>& constraint_tokens,
-        cvc5::TermManager& tm,
+        /*cvc5::TermManager& tm,*/
         cvc5::Solver& solver,
         const std::map<std::string, cvc5::Term>& var_map
     );
@@ -49,7 +49,7 @@ private:
     static cvc5::Term parseTerm(
         const std::vector<std::string>& tokens,
         size_t& pos,
-        cvc5::TermManager& tm,
+        /*cvc5::TermManager& tm,*/
         cvc5::Solver& solver,
         const std::map<std::string, cvc5::Term>& var_map
     );

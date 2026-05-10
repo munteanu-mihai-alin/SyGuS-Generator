@@ -23,7 +23,7 @@ int extractBitVecSize(std::string s ) {
 bool SynthesisStrategy::verifyCandidate(
         const std::shared_ptr<GrammarTerm>& candidate,
         const SyGuSProgram& program,
-        cvc5::TermManager& tm,
+        /*cvc5::TermManager& tm,*/
         cvc5::Solver& solver,
         std::vector<cvc5::Term>& counterexamples
     ){
@@ -34,21 +34,22 @@ bool SynthesisStrategy::verifyCandidate(
         std::map<std::string, cvc5::Term> var_map;
         for (const auto& var : program.declare_vars) {
             if (var.type == "Int") {
-                cvc5::Sort sort = tm.getIntegerSort();
-                var_map[var.name] = tm.mkConst(sort, var.name);
+
+                cvc5::Sort sort = solver.getIntegerSort();
+                var_map[var.name] = solver.mkConst(sort, var.name);
             } else if (var.type.starts_with("(_ BitVec")) {
                 int size = extractBitVecSize(var.type);
-                cvc5::Sort sort = tm.mkBitVectorSort(size);
-                var_map[var.name] = tm.mkConst(sort, var.name);
+                cvc5::Sort sort = solver.mkBitVectorSort(size);
+                var_map[var.name] = solver.mkConst(sort, var.name);
             }
         }
 
         // 2. Convert candidate to CVC5 term
-        cvc5::Term candidate_term = termToCVC5(candidate,tm,solver, var_map);
+        cvc5::Term candidate_term = termToCVC5(candidate,/*tm,*/solver, var_map);
 
         // 3. Add constraints to the solver
         for (const auto& constraint : program.constraints) {
-            cvc5::Term constraint_term = parseConstraintToCVC5(constraint.expr,tm,solver, var_map);
+            cvc5::Term constraint_term = parseConstraintToCVC5(constraint.expr,/*tm,*/solver, var_map);
             solver.assertFormula(constraint_term);
         }
 
@@ -80,21 +81,21 @@ std::shared_ptr<GrammarTerm> SynthesisStrategy::buildFromProduction(
 }
 cvc5::Term SynthesisStrategy::termToCVC5(
     const std::shared_ptr<GrammarTerm>& term,
-    cvc5::TermManager& tm,
+    /*cvc5::TermManager& tm,*/
     cvc5::Solver& solver,
     const std::map<std::string, cvc5::Term>& var_map
 ) {
      if (term->symbol == "bvadd") {
-         return tm.mkTerm(cvc5::Kind::BITVECTOR_ADD, {
-             termToCVC5(term->children[0], tm, solver, var_map),
-             termToCVC5(term->children[1], tm, solver, var_map)
+         return solver.mkTerm(cvc5::Kind::BITVECTOR_ADD, {
+             termToCVC5(term->children[0], /*tm,*/ solver, var_map),
+             termToCVC5(term->children[1],/* tm,*/ solver, var_map)
          });
      } else if (var_map.count(term->symbol)) {
          return var_map.at(term->symbol);
      } else {
          try {
              uint32_t val = std::stoul(term->symbol, nullptr, 16);  // Hex literals
-             return tm.mkBitVector(8, val);  // Assume 8-bit
+             return solver.mkBitVector(8, val);  // Assume 8-bit
          } catch (...) {
              throw std::runtime_error("Unknown term: " + term->symbol);
          }
@@ -105,7 +106,7 @@ cvc5::Term SynthesisStrategy::termToCVC5(
 cvc5::Term SynthesisStrategy::parseTerm(
     const std::vector<std::string>& tokens,
     size_t& pos,
-    cvc5::TermManager& tm,
+    /*cvc5::TermManager& tm,*/
     cvc5::Solver& solver,
     const std::map<std::string, cvc5::Term>& var_map
 ) {
@@ -119,7 +120,7 @@ cvc5::Term SynthesisStrategy::parseTerm(
         std::string op = tokens[pos++];
         std::vector<cvc5::Term> args;
         while (pos < tokens.size() && tokens[pos] != ")") {
-            args.push_back(parseTerm(tokens, pos, tm, solver, var_map));
+            args.push_back(parseTerm(tokens, pos, /*tm,*/ solver, var_map));
         }
         pos++; // Skip closing ')'
 
@@ -143,10 +144,10 @@ cvc5::Term SynthesisStrategy::parseTerm(
             // Handle BitVec literals (e.g., #x00, #b1010)
             if (token[1] == 'x') {
                 uint32_t value = std::stoul(token.substr(2), nullptr, 16);
-                return tm.mkBitVector(8, value); // Assume 8-bit for example
+                return solver.mkBitVector(8, value); // Assume 8-bit for example
             } else if (token[1] == 'b') {
                 uint32_t value = std::stoul(token.substr(2), nullptr, 2);
-                return tm.mkBitVector(token.size() - 2, value);
+                return solver.mkBitVector(token.size() - 2, value);
             }
         }
         throw std::runtime_error("Unknown symbol or literal: " + token);
@@ -156,11 +157,16 @@ cvc5::Term SynthesisStrategy::parseTerm(
 cvc5::Kind SynthesisStrategy::getKind(const std::string& op) {
     static std::map<std::string, cvc5::Kind> op_map = {
         {"=", cvc5::Kind::EQUAL},
+        {"<", cvc5::Kind::LT},
+        {">", cvc5::Kind::GT},
+        {"<=", cvc5::Kind::LEQ},
+        {">=", cvc5::Kind::GEQ},
         {"bvadd", cvc5::Kind::BITVECTOR_ADD},
         {"bvmul", cvc5::Kind::BITVECTOR_MULT},
         {"and", cvc5::Kind::AND},
         {"or", cvc5::Kind::OR},
         {"not", cvc5::Kind::NOT}
+
         // Add more operators as needed
     };
     if (op_map.find(op) == op_map.end()) {
@@ -171,10 +177,10 @@ cvc5::Kind SynthesisStrategy::getKind(const std::string& op) {
 
 cvc5::Term SynthesisStrategy::parseConstraintToCVC5(
     const std::vector<std::string>& constraint_tokens,
-    cvc5::TermManager& tm,
+    /*cvc5::TermManager& tm,*/
     cvc5::Solver& solver,
     const std::map<std::string, cvc5::Term>& var_map
 ) {
     size_t pos = 0;
-    return parseTerm(constraint_tokens, pos, tm, solver, var_map);
+    return parseTerm(constraint_tokens, pos, /*tm,*/ solver, var_map);
 }

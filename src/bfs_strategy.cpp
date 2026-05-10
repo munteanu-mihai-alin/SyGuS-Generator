@@ -3,10 +3,9 @@
 
 using namespace cvc5;
 
-
 std::shared_ptr<GrammarTerm> BFSStrategy::synthesize(
     const SyGuSProgram& program,
-    cvc5::TermManager& tm,
+    /*cvc5::TermManager& tm,*/
     cvc5::Solver& solver,
     std::vector<cvc5::Term>& counterexamples
 ) {
@@ -19,7 +18,7 @@ std::shared_ptr<GrammarTerm> BFSStrategy::synthesize(
         auto candidate = q.front();
         q.pop();
 
-        if (SynthesisStrategy::verifyCandidate(candidate, program, tm, solver, counterexamples))
+        if (SynthesisStrategy::verifyCandidate(candidate, program, /*tm,*/  solver, counterexamples))
             return candidate;
 
         // Expand non-terminals

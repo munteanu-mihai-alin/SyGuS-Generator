@@ -33,14 +33,14 @@ std::shared_ptr<GrammarTerm> SAStrategy::mutate(
 
 double SAStrategy::evaluateCost(
     const std::shared_ptr<GrammarTerm>& candidate,
-    cvc5::TermManager& tm,
+    /*cvc5::TermManager& tm,*/
     cvc5::Solver& solver,
     const std::vector<cvc5::Term>& counterexamples
 ) {
     double cost = 0;
     for (const auto& ce : counterexamples) {
         solver.resetAssertions();
-        auto term = SynthesisStrategy::termToCVC5(candidate, tm, solver, {});
+        auto term = SynthesisStrategy::termToCVC5(candidate, /*tm,*/ solver, {});
         solver.assertFormula(solver.mkTerm(cvc5::Kind::EQUAL, {term, ce}));
         if (solver.checkSat().isUnsat()) cost += 1;
     }
@@ -49,7 +49,7 @@ double SAStrategy::evaluateCost(
 
 std::shared_ptr<GrammarTerm> SAStrategy::synthesize(
     const SyGuSProgram& program,
-    cvc5::TermManager& tm,
+    /*cvc5::TermManager& tm,*/
     cvc5::Solver& solver,
     std::vector<cvc5::Term>& counterexamples
 ) {
@@ -57,12 +57,12 @@ std::shared_ptr<GrammarTerm> SAStrategy::synthesize(
     const auto& prods = program.synth_funs[0].grammar.at("Start");
     auto current = buildFromProduction(prods[prod_dist(gen) % prods.size()]);
     auto best = current;
-    double current_cost = evaluateCost(current, tm, solver, counterexamples);
+    double current_cost = evaluateCost(current, /*tm,*/ solver, counterexamples);
     double best_cost = current_cost;
 
     for (int i = 0; i < 1000 && temp > 1e-6; ++i) {
         auto neighbor = mutate(current, program);
-        double neighbor_cost = evaluateCost(neighbor, tm, solver, counterexamples);
+        double neighbor_cost = evaluateCost(neighbor, /*tm,*/ solver, counterexamples);
 
         if (neighbor_cost < current_cost ||
             prob_dist(gen) < std::exp((current_cost - neighbor_cost)/temp)) {
