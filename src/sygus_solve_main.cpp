@@ -12,7 +12,8 @@ void printUsage() {
                "[--max-candidates N] [--max-cegis-rounds N] [--max-samples N] "
                "[--no-cvc5-verify] [--model PATH] "
                "[--verbose] [--strategy enum|best-first|ga|sa] "
-               "[--ga-population N] [--ga-generations N] [--sa-steps N] <input-file>\n";
+               "[--ga-population N] [--ga-generations N] [--sa-steps N] "
+               "<input-file>\n";
 }
 
 bool parseSize(const std::string& text, size_t& output) {

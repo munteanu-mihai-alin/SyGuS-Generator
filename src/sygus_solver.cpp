@@ -495,7 +495,8 @@ Value applyBuiltin(const std::string& op, const std::vector<Value>& args) {
         int64_t sr = static_cast<int64_t>(right.value << (64 - left.width)) >>
                      (64 - left.width);
         int64_t rem = sl % sr;
-        if (rem != 0 && ((rem ^ sr) < 0)) rem += sr;
+        if (rem != 0 && ((rem ^ sr) < 0))
+          rem += sr;
         value = static_cast<uint64_t>(rem);
       }
     }
@@ -521,17 +522,24 @@ Value applyBuiltin(const std::string& op, const std::vector<Value>& args) {
     if (left.width != right.width) {
       throw std::runtime_error("bit-vector widths must match for '" + op + "'");
     }
-    if (op == "bvult") return Value::makeBool(left.value < right.value);
-    if (op == "bvule") return Value::makeBool(left.value <= right.value);
-    if (op == "bvugt") return Value::makeBool(left.value > right.value);
-    if (op == "bvuge") return Value::makeBool(left.value >= right.value);
+    if (op == "bvult")
+      return Value::makeBool(left.value < right.value);
+    if (op == "bvule")
+      return Value::makeBool(left.value <= right.value);
+    if (op == "bvugt")
+      return Value::makeBool(left.value > right.value);
+    if (op == "bvuge")
+      return Value::makeBool(left.value >= right.value);
     int64_t sl = static_cast<int64_t>(left.value << (64 - left.width)) >>
                  (64 - left.width);
     int64_t sr = static_cast<int64_t>(right.value << (64 - left.width)) >>
                  (64 - left.width);
-    if (op == "bvslt") return Value::makeBool(sl < sr);
-    if (op == "bvsle") return Value::makeBool(sl <= sr);
-    if (op == "bvsgt") return Value::makeBool(sl > sr);
+    if (op == "bvslt")
+      return Value::makeBool(sl < sr);
+    if (op == "bvsle")
+      return Value::makeBool(sl <= sr);
+    if (op == "bvsgt")
+      return Value::makeBool(sl > sr);
     return Value::makeBool(sl >= sr);
   }
 
@@ -554,11 +562,13 @@ Value applyBuiltin(const std::string& op, const std::vector<Value>& args) {
     }
     if (op == "div") {
       int64_t q = a / b;
-      if ((a % b != 0) && ((a ^ b) < 0)) --q;
+      if ((a % b != 0) && ((a ^ b) < 0))
+        --q;
       return Value::makeInt(q);
     }
     int64_t q = a / b;
-    if ((a % b != 0) && ((a ^ b) < 0)) --q;
+    if ((a % b != 0) && ((a ^ b) < 0))
+      --q;
     return Value::makeInt(a - q * b);
   }
 
@@ -1248,8 +1258,9 @@ cvc5::Term translateExpression(cvc5::Solver& solver, const SExpr& expr,
       if (bparts.size() != 2) {
         throw std::runtime_error("Invalid let binding in cvc5 translation");
       }
-      local_env[bparts[0].asAtom()] = translateExpression(
-          solver, bparts[1], local_env, define_funs, synth_fun, synth_candidate);
+      local_env[bparts[0].asAtom()] =
+          translateExpression(solver, bparts[1], local_env, define_funs,
+                              synth_fun, synth_candidate);
     }
     return translateExpression(solver, items[2], local_env, define_funs,
                                synth_fun, synth_candidate);
@@ -1295,10 +1306,9 @@ Value cvc5TermToValue(const cvc5::Term& term, const SortDescriptor& sort) {
     case ValueKind::Bool:
       return Value::makeBool(term.getBooleanValue());
     case ValueKind::BitVec:
-      return Value::makeBitVector(
-          static_cast<uint64_t>(
-              std::stoull(term.getBitVectorValue(), nullptr, 2)),
-          sort.bit_width);
+      return Value::makeBitVector(static_cast<uint64_t>(std::stoull(
+                                      term.getBitVectorValue(), nullptr, 2)),
+                                  sort.bit_width);
   }
   return Value::makeInt(0);
 }
@@ -1363,8 +1373,7 @@ VerifyResult verifyWithCvc5(const SyGuSProgram& program,
       try {
         cvc5::Term model_value = solver.getValue(env.at(name));
         verify.counterexample[name] = cvc5TermToValue(model_value, sort);
-      } catch (...) {
-      }
+      } catch (...) {}
     }
     return verify;
   }
@@ -1376,7 +1385,8 @@ VerifyResult verifyWithCvc5(const SyGuSProgram& program,
 #endif
 
 size_t countNodes(const SExpr& expr) {
-  if (expr.isAtom()) return 1;
+  if (expr.isAtom())
+    return 1;
   size_t count = 0;
   for (const auto& child : expr.asList()) {
     count += countNodes(child);
@@ -1385,13 +1395,19 @@ size_t countNodes(const SExpr& expr) {
 }
 
 SExpr getSubtreeAt(const SExpr& expr, size_t target_index, size_t& current) {
-  if (current == target_index) return expr;
-  if (expr.isAtom()) { ++current; return expr; }
+  if (current == target_index)
+    return expr;
+  if (expr.isAtom()) {
+    ++current;
+    return expr;
+  }
   ++current;
   for (const auto& child : expr.asList()) {
-    if (current > target_index) break;
+    if (current > target_index)
+      break;
     auto result = getSubtreeAt(child, target_index, current);
-    if (current > target_index) return result;
+    if (current > target_index)
+      return result;
   }
   return expr;
 }
@@ -1402,11 +1418,15 @@ SExpr replaceSubtreeAt(const SExpr& expr, size_t target_index,
     ++current;
     return replacement;
   }
-  if (expr.isAtom()) { ++current; return expr; }
+  if (expr.isAtom()) {
+    ++current;
+    return expr;
+  }
   ++current;
   std::vector<SExpr> new_items;
   for (const auto& child : expr.asList()) {
-    new_items.push_back(replaceSubtreeAt(child, target_index, replacement, current));
+    new_items.push_back(
+        replaceSubtreeAt(child, target_index, replacement, current));
   }
   return SExpr::makeList(std::move(new_items));
 }
@@ -1414,7 +1434,8 @@ SExpr replaceSubtreeAt(const SExpr& expr, size_t target_index,
 SExpr crossover(const SExpr& parent1, const SExpr& parent2, std::mt19937& rng) {
   size_t n1 = countNodes(parent1);
   size_t n2 = countNodes(parent2);
-  if (n1 <= 1 || n2 <= 1) return parent1;
+  if (n1 <= 1 || n2 <= 1)
+    return parent1;
 
   std::uniform_int_distribution<size_t> dist1(0, n1 - 1);
   std::uniform_int_distribution<size_t> dist2(0, n2 - 1);
@@ -1431,7 +1452,8 @@ SExpr crossover(const SExpr& parent1, const SExpr& parent2, std::mt19937& rng) {
 SExpr mutateExpr(const SExpr& expr, const std::vector<SExpr>& gene_pool,
                  std::mt19937& rng) {
   size_t n = countNodes(expr);
-  if (n == 0 || gene_pool.empty()) return expr;
+  if (n == 0 || gene_pool.empty())
+    return expr;
 
   std::uniform_int_distribution<size_t> pos_dist(0, n - 1);
   std::uniform_int_distribution<size_t> pool_dist(0, gene_pool.size() - 1);
@@ -1469,8 +1491,7 @@ double candidateFitness(const SyGuSProgram& program, const SynthFun& synth_fun,
         if (result.kind() == ValueKind::Bool && result.asBool()) {
           ++satisfied;
         }
-      } catch (...) {
-      }
+      } catch (...) {}
     }
   }
   return total > 0 ? static_cast<double>(satisfied) / static_cast<double>(total)
@@ -1490,10 +1511,11 @@ SExpr makeSortExpr(const SortDescriptor& sort) {
   return SExpr::makeAtom("Int");
 }
 
-std::vector<GrammarRule> generateDefaultGrammar(
-    const SynthFun& synth_fun, const std::string& logic) {
+std::vector<GrammarRule> generateDefaultGrammar(const SynthFun& synth_fun,
+                                                const std::string& logic) {
   const auto return_sort = parseSort(synth_fun.return_sort);
-  if (!return_sort.has_value()) return {};
+  if (!return_sort.has_value())
+    return {};
 
   std::set<std::string> param_sort_strs;
   std::vector<SortDescriptor> param_sorts;
@@ -1512,15 +1534,19 @@ std::vector<GrammarRule> generateDefaultGrammar(
   bool has_bv = false;
   uint32_t bv_width = 0;
 
-  if (return_sort->kind == ValueKind::Int) has_int = true;
-  if (return_sort->kind == ValueKind::Bool) has_bool = true;
+  if (return_sort->kind == ValueKind::Int)
+    has_int = true;
+  if (return_sort->kind == ValueKind::Bool)
+    has_bool = true;
   if (return_sort->kind == ValueKind::BitVec) {
     has_bv = true;
     bv_width = return_sort->bit_width;
   }
   for (const auto& ps : param_sorts) {
-    if (ps.kind == ValueKind::Int) has_int = true;
-    if (ps.kind == ValueKind::Bool) has_bool = true;
+    if (ps.kind == ValueKind::Int)
+      has_int = true;
+    if (ps.kind == ValueKind::Bool)
+      has_bool = true;
     if (ps.kind == ValueKind::BitVec) {
       has_bv = true;
       bv_width = ps.bit_width;
@@ -1532,8 +1558,10 @@ std::vector<GrammarRule> generateDefaultGrammar(
                 logic.find("DTLIA") != std::string::npos;
   bool is_bv = logic.find("BV") != std::string::npos;
 
-  if (!is_lia && !is_bv && has_int) is_lia = true;
-  if (!is_lia && !is_bv && has_bv) is_bv = true;
+  if (!is_lia && !is_bv && has_int)
+    is_lia = true;
+  if (!is_lia && !is_bv && has_bv)
+    is_bv = true;
 
   std::vector<GrammarRule> rules;
 
@@ -1553,18 +1581,18 @@ std::vector<GrammarRule> generateDefaultGrammar(
       }
     }
 
-    int_rule.productions.push_back(SExpr::makeList(
-        {SExpr::makeAtom("+"), SExpr::makeAtom("ntInt"),
-         SExpr::makeAtom("ntInt")}));
-    int_rule.productions.push_back(SExpr::makeList(
-        {SExpr::makeAtom("-"), SExpr::makeAtom("ntInt"),
-         SExpr::makeAtom("ntInt")}));
-    int_rule.productions.push_back(SExpr::makeList(
-        {SExpr::makeAtom("*"), SExpr::makeAtom("ntInt"),
-         SExpr::makeAtom("ntInt")}));
-    int_rule.productions.push_back(SExpr::makeList(
-        {SExpr::makeAtom("ite"), SExpr::makeAtom("ntBool"),
-         SExpr::makeAtom("ntInt"), SExpr::makeAtom("ntInt")}));
+    int_rule.productions.push_back(
+        SExpr::makeList({SExpr::makeAtom("+"), SExpr::makeAtom("ntInt"),
+                         SExpr::makeAtom("ntInt")}));
+    int_rule.productions.push_back(
+        SExpr::makeList({SExpr::makeAtom("-"), SExpr::makeAtom("ntInt"),
+                         SExpr::makeAtom("ntInt")}));
+    int_rule.productions.push_back(
+        SExpr::makeList({SExpr::makeAtom("*"), SExpr::makeAtom("ntInt"),
+                         SExpr::makeAtom("ntInt")}));
+    int_rule.productions.push_back(
+        SExpr::makeList({SExpr::makeAtom("ite"), SExpr::makeAtom("ntBool"),
+                         SExpr::makeAtom("ntInt"), SExpr::makeAtom("ntInt")}));
 
     rules.push_back(std::move(int_rule));
   };
@@ -1585,46 +1613,46 @@ std::vector<GrammarRule> generateDefaultGrammar(
       }
     }
 
-    bool_rule.productions.push_back(SExpr::makeList(
-        {SExpr::makeAtom("and"), SExpr::makeAtom("ntBool"),
-         SExpr::makeAtom("ntBool")}));
-    bool_rule.productions.push_back(SExpr::makeList(
-        {SExpr::makeAtom("or"), SExpr::makeAtom("ntBool"),
-         SExpr::makeAtom("ntBool")}));
-    bool_rule.productions.push_back(SExpr::makeList(
-        {SExpr::makeAtom("not"), SExpr::makeAtom("ntBool")}));
-    bool_rule.productions.push_back(SExpr::makeList(
-        {SExpr::makeAtom("=>"), SExpr::makeAtom("ntBool"),
-         SExpr::makeAtom("ntBool")}));
+    bool_rule.productions.push_back(
+        SExpr::makeList({SExpr::makeAtom("and"), SExpr::makeAtom("ntBool"),
+                         SExpr::makeAtom("ntBool")}));
+    bool_rule.productions.push_back(
+        SExpr::makeList({SExpr::makeAtom("or"), SExpr::makeAtom("ntBool"),
+                         SExpr::makeAtom("ntBool")}));
+    bool_rule.productions.push_back(
+        SExpr::makeList({SExpr::makeAtom("not"), SExpr::makeAtom("ntBool")}));
+    bool_rule.productions.push_back(
+        SExpr::makeList({SExpr::makeAtom("=>"), SExpr::makeAtom("ntBool"),
+                         SExpr::makeAtom("ntBool")}));
 
     if (has_int) {
-      bool_rule.productions.push_back(SExpr::makeList(
-          {SExpr::makeAtom("<="), SExpr::makeAtom("ntInt"),
-           SExpr::makeAtom("ntInt")}));
-      bool_rule.productions.push_back(SExpr::makeList(
-          {SExpr::makeAtom("<"), SExpr::makeAtom("ntInt"),
-           SExpr::makeAtom("ntInt")}));
-      bool_rule.productions.push_back(SExpr::makeList(
-          {SExpr::makeAtom("="), SExpr::makeAtom("ntInt"),
-           SExpr::makeAtom("ntInt")}));
-      bool_rule.productions.push_back(SExpr::makeList(
-          {SExpr::makeAtom(">="), SExpr::makeAtom("ntInt"),
-           SExpr::makeAtom("ntInt")}));
-      bool_rule.productions.push_back(SExpr::makeList(
-          {SExpr::makeAtom(">"), SExpr::makeAtom("ntInt"),
-           SExpr::makeAtom("ntInt")}));
+      bool_rule.productions.push_back(
+          SExpr::makeList({SExpr::makeAtom("<="), SExpr::makeAtom("ntInt"),
+                           SExpr::makeAtom("ntInt")}));
+      bool_rule.productions.push_back(
+          SExpr::makeList({SExpr::makeAtom("<"), SExpr::makeAtom("ntInt"),
+                           SExpr::makeAtom("ntInt")}));
+      bool_rule.productions.push_back(
+          SExpr::makeList({SExpr::makeAtom("="), SExpr::makeAtom("ntInt"),
+                           SExpr::makeAtom("ntInt")}));
+      bool_rule.productions.push_back(
+          SExpr::makeList({SExpr::makeAtom(">="), SExpr::makeAtom("ntInt"),
+                           SExpr::makeAtom("ntInt")}));
+      bool_rule.productions.push_back(
+          SExpr::makeList({SExpr::makeAtom(">"), SExpr::makeAtom("ntInt"),
+                           SExpr::makeAtom("ntInt")}));
     }
 
     if (has_bv) {
-      bool_rule.productions.push_back(SExpr::makeList(
-          {SExpr::makeAtom("="), SExpr::makeAtom("ntBV"),
-           SExpr::makeAtom("ntBV")}));
-      bool_rule.productions.push_back(SExpr::makeList(
-          {SExpr::makeAtom("bvult"), SExpr::makeAtom("ntBV"),
-           SExpr::makeAtom("ntBV")}));
-      bool_rule.productions.push_back(SExpr::makeList(
-          {SExpr::makeAtom("bvslt"), SExpr::makeAtom("ntBV"),
-           SExpr::makeAtom("ntBV")}));
+      bool_rule.productions.push_back(
+          SExpr::makeList({SExpr::makeAtom("="), SExpr::makeAtom("ntBV"),
+                           SExpr::makeAtom("ntBV")}));
+      bool_rule.productions.push_back(
+          SExpr::makeList({SExpr::makeAtom("bvult"), SExpr::makeAtom("ntBV"),
+                           SExpr::makeAtom("ntBV")}));
+      bool_rule.productions.push_back(
+          SExpr::makeList({SExpr::makeAtom("bvslt"), SExpr::makeAtom("ntBV"),
+                           SExpr::makeAtom("ntBV")}));
     }
 
     rules.push_back(std::move(bool_rule));
@@ -1637,12 +1665,12 @@ std::vector<GrammarRule> generateDefaultGrammar(
     bv_rule.sort = bv_sort;
     bv_rule.type = bv_sort.toString();
 
-    bv_rule.productions.push_back(SExpr::makeList(
-        {SExpr::makeAtom("_"), SExpr::makeAtom("bv0"),
-         SExpr::makeAtom(std::to_string(bv_width))}));
-    bv_rule.productions.push_back(SExpr::makeList(
-        {SExpr::makeAtom("_"), SExpr::makeAtom("bv1"),
-         SExpr::makeAtom(std::to_string(bv_width))}));
+    bv_rule.productions.push_back(
+        SExpr::makeList({SExpr::makeAtom("_"), SExpr::makeAtom("bv0"),
+                         SExpr::makeAtom(std::to_string(bv_width))}));
+    bv_rule.productions.push_back(
+        SExpr::makeList({SExpr::makeAtom("_"), SExpr::makeAtom("bv1"),
+                         SExpr::makeAtom(std::to_string(bv_width))}));
 
     for (const auto& param : synth_fun.params) {
       auto sort = parseSort(param.sort);
@@ -1652,37 +1680,37 @@ std::vector<GrammarRule> generateDefaultGrammar(
       }
     }
 
-    bv_rule.productions.push_back(SExpr::makeList(
-        {SExpr::makeAtom("bvadd"), SExpr::makeAtom("ntBV"),
-         SExpr::makeAtom("ntBV")}));
-    bv_rule.productions.push_back(SExpr::makeList(
-        {SExpr::makeAtom("bvsub"), SExpr::makeAtom("ntBV"),
-         SExpr::makeAtom("ntBV")}));
-    bv_rule.productions.push_back(SExpr::makeList(
-        {SExpr::makeAtom("bvand"), SExpr::makeAtom("ntBV"),
-         SExpr::makeAtom("ntBV")}));
-    bv_rule.productions.push_back(SExpr::makeList(
-        {SExpr::makeAtom("bvor"), SExpr::makeAtom("ntBV"),
-         SExpr::makeAtom("ntBV")}));
-    bv_rule.productions.push_back(SExpr::makeList(
-        {SExpr::makeAtom("bvxor"), SExpr::makeAtom("ntBV"),
-         SExpr::makeAtom("ntBV")}));
-    bv_rule.productions.push_back(SExpr::makeList(
-        {SExpr::makeAtom("bvnot"), SExpr::makeAtom("ntBV")}));
-    bv_rule.productions.push_back(SExpr::makeList(
-        {SExpr::makeAtom("bvneg"), SExpr::makeAtom("ntBV")}));
-    bv_rule.productions.push_back(SExpr::makeList(
-        {SExpr::makeAtom("bvshl"), SExpr::makeAtom("ntBV"),
-         SExpr::makeAtom("ntBV")}));
-    bv_rule.productions.push_back(SExpr::makeList(
-        {SExpr::makeAtom("bvlshr"), SExpr::makeAtom("ntBV"),
-         SExpr::makeAtom("ntBV")}));
-    bv_rule.productions.push_back(SExpr::makeList(
-        {SExpr::makeAtom("bvashr"), SExpr::makeAtom("ntBV"),
-         SExpr::makeAtom("ntBV")}));
-    bv_rule.productions.push_back(SExpr::makeList(
-        {SExpr::makeAtom("ite"), SExpr::makeAtom("ntBool"),
-         SExpr::makeAtom("ntBV"), SExpr::makeAtom("ntBV")}));
+    bv_rule.productions.push_back(
+        SExpr::makeList({SExpr::makeAtom("bvadd"), SExpr::makeAtom("ntBV"),
+                         SExpr::makeAtom("ntBV")}));
+    bv_rule.productions.push_back(
+        SExpr::makeList({SExpr::makeAtom("bvsub"), SExpr::makeAtom("ntBV"),
+                         SExpr::makeAtom("ntBV")}));
+    bv_rule.productions.push_back(
+        SExpr::makeList({SExpr::makeAtom("bvand"), SExpr::makeAtom("ntBV"),
+                         SExpr::makeAtom("ntBV")}));
+    bv_rule.productions.push_back(
+        SExpr::makeList({SExpr::makeAtom("bvor"), SExpr::makeAtom("ntBV"),
+                         SExpr::makeAtom("ntBV")}));
+    bv_rule.productions.push_back(
+        SExpr::makeList({SExpr::makeAtom("bvxor"), SExpr::makeAtom("ntBV"),
+                         SExpr::makeAtom("ntBV")}));
+    bv_rule.productions.push_back(
+        SExpr::makeList({SExpr::makeAtom("bvnot"), SExpr::makeAtom("ntBV")}));
+    bv_rule.productions.push_back(
+        SExpr::makeList({SExpr::makeAtom("bvneg"), SExpr::makeAtom("ntBV")}));
+    bv_rule.productions.push_back(
+        SExpr::makeList({SExpr::makeAtom("bvshl"), SExpr::makeAtom("ntBV"),
+                         SExpr::makeAtom("ntBV")}));
+    bv_rule.productions.push_back(
+        SExpr::makeList({SExpr::makeAtom("bvlshr"), SExpr::makeAtom("ntBV"),
+                         SExpr::makeAtom("ntBV")}));
+    bv_rule.productions.push_back(
+        SExpr::makeList({SExpr::makeAtom("bvashr"), SExpr::makeAtom("ntBV"),
+                         SExpr::makeAtom("ntBV")}));
+    bv_rule.productions.push_back(
+        SExpr::makeList({SExpr::makeAtom("ite"), SExpr::makeAtom("ntBool"),
+                         SExpr::makeAtom("ntBV"), SExpr::makeAtom("ntBV")}));
 
     rules.push_back(std::move(bv_rule));
   };
@@ -1690,13 +1718,17 @@ std::vector<GrammarRule> generateDefaultGrammar(
   if (return_sort->kind == ValueKind::Int) {
     addIntRule();
     addBoolRule();
-    if (has_bv) addBVRule();
+    if (has_bv)
+      addBVRule();
   } else if (return_sort->kind == ValueKind::Bool) {
-    if (has_int) addIntRule();
+    if (has_int)
+      addIntRule();
     addBoolRule();
-    if (has_bv) addBVRule();
+    if (has_bv)
+      addBVRule();
   } else if (return_sort->kind == ValueKind::BitVec) {
-    if (has_int) addIntRule();
+    if (has_int)
+      addIntRule();
     addBoolRule();
     addBVRule();
   }
@@ -1718,7 +1750,10 @@ SyGuSProgram convertInvToSynthFun(const SyGuSProgram& original) {
   for (const auto& pv : original.declare_primed_vars) {
     bool found = false;
     for (const auto& dv : program.declare_vars) {
-      if (dv.name == pv.name) { found = true; break; }
+      if (dv.name == pv.name) {
+        found = true;
+        break;
+      }
     }
     if (!found) {
       DeclareVar dv;
@@ -1730,7 +1765,10 @@ SyGuSProgram convertInvToSynthFun(const SyGuSProgram& original) {
     std::string primed_name = pv.name + "!";
     bool found_primed = false;
     for (const auto& dv : program.declare_vars) {
-      if (dv.name == primed_name) { found_primed = true; break; }
+      if (dv.name == primed_name) {
+        found_primed = true;
+        break;
+      }
     }
     if (!found_primed) {
       DeclareVar dv;
@@ -1757,18 +1795,26 @@ SyGuSProgram convertInvToSynthFun(const SyGuSProgram& original) {
     const DefineFun* post_fun = nullptr;
 
     for (const auto& df : program.define_funs) {
-      if (df.name == inv_c.pre) pre_fun = &df;
-      if (df.name == inv_c.trans) trans_fun = &df;
-      if (df.name == inv_c.post) post_fun = &df;
+      if (df.name == inv_c.pre)
+        pre_fun = &df;
+      if (df.name == inv_c.trans)
+        trans_fun = &df;
+      if (df.name == inv_c.post)
+        post_fun = &df;
     }
 
-    if (!pre_fun || !trans_fun || !post_fun) continue;
+    if (!pre_fun || !trans_fun || !post_fun)
+      continue;
 
     const SynthInv* inv = nullptr;
     for (const auto& si : original.synth_invs) {
-      if (si.name == inv_c.inv) { inv = &si; break; }
+      if (si.name == inv_c.inv) {
+        inv = &si;
+        break;
+      }
     }
-    if (!inv) continue;
+    if (!inv)
+      continue;
 
     auto makeCallArgs = [](const std::string& fn,
                            const std::vector<TypedIdentifier>& params) {
@@ -1785,8 +1831,8 @@ SyGuSProgram convertInvToSynthFun(const SyGuSProgram& original) {
     // pre(x) => inv(x)
     {
       Constraint c;
-      c.expression = SExpr::makeList(
-          {SExpr::makeAtom("=>"), pre_fun->body, inv_call});
+      c.expression =
+          SExpr::makeList({SExpr::makeAtom("=>"), pre_fun->body, inv_call});
       flattenExprTokens(c.expression, c.expr);
       program.constraints.push_back(std::move(c));
     }
@@ -1811,7 +1857,10 @@ SyGuSProgram convertInvToSynthFun(const SyGuSProgram& original) {
       for (const auto& p : inv->params) {
         bool already_declared = false;
         for (const auto& dv : program.declare_vars) {
-          if (dv.name == p.name + "!") { already_declared = true; break; }
+          if (dv.name == p.name + "!") {
+            already_declared = true;
+            break;
+          }
         }
         if (!already_declared) {
           DeclareVar dv;
@@ -1826,8 +1875,8 @@ SyGuSProgram convertInvToSynthFun(const SyGuSProgram& original) {
     // inv(x) => post(x)
     {
       Constraint c;
-      c.expression = SExpr::makeList(
-          {SExpr::makeAtom("=>"), inv_call, post_fun->body});
+      c.expression =
+          SExpr::makeList({SExpr::makeAtom("=>"), inv_call, post_fun->body});
       flattenExprTokens(c.expression, c.expr);
       program.constraints.push_back(std::move(c));
     }
@@ -1835,7 +1884,10 @@ SyGuSProgram convertInvToSynthFun(const SyGuSProgram& original) {
     for (const auto& p : inv->params) {
       bool already_declared = false;
       for (const auto& dv : program.declare_vars) {
-        if (dv.name == p.name) { already_declared = true; break; }
+        if (dv.name == p.name) {
+          already_declared = true;
+          break;
+        }
       }
       if (!already_declared) {
         DeclareVar dv;
@@ -1864,10 +1916,14 @@ void flattenExprTokens(const SExpr& expr, std::vector<std::string>& output) {
 
 std::string strategyToString(SearchStrategy strategy) {
   switch (strategy) {
-    case SearchStrategy::Enum: return "enum";
-    case SearchStrategy::BestFirst: return "best-first";
-    case SearchStrategy::GA: return "ga";
-    case SearchStrategy::SA: return "sa";
+    case SearchStrategy::Enum:
+      return "enum";
+    case SearchStrategy::BestFirst:
+      return "best-first";
+    case SearchStrategy::GA:
+      return "ga";
+    case SearchStrategy::SA:
+      return "sa";
   }
   return "unknown";
 }
@@ -1929,8 +1985,7 @@ SolveResult SyGuSSolver::solve(const SyGuSProgram& original_program,
     auto generated = generateDefaultGrammar(synth_fun, program.logic);
     if (generated.empty()) {
       result.status = SolveResult::Status::Unsupported;
-      result.message =
-          "Cannot generate a default grammar for this problem.";
+      result.message = "Cannot generate a default grammar for this problem.";
       return result;
     }
     synth_fun.grammar_rules = std::move(generated);
@@ -2024,8 +2079,8 @@ SolveResult SyGuSSolver::solve(const SyGuSProgram& original_program,
   result.enumerated_candidates = candidate_pool.size();
 
   if (options.verbose) {
-    std::cerr << "[enum] " << candidate_pool.size()
-              << " candidates (max size " << options.max_expression_size << ")\n";
+    std::cerr << "[enum] " << candidate_pool.size() << " candidates (max size "
+              << options.max_expression_size << ")\n";
   }
 
   CandidatePredictor predictor;
@@ -2081,13 +2136,14 @@ SolveResult SyGuSSolver::solve(const SyGuSProgram& original_program,
     }
 
     std::mt19937 rng(42);
-    const size_t pop_size = std::min(options.ga_population_size,
-                                     std::max(candidate_pool.size(), size_t{2}));
+    const size_t pop_size = std::min(
+        options.ga_population_size, std::max(candidate_pool.size(), size_t{2}));
 
     // Initialize population from candidate pool
     std::vector<SExpr> population;
     population.reserve(pop_size);
-    std::uniform_int_distribution<size_t> pool_dist(0, candidate_pool.size() - 1);
+    std::uniform_int_distribution<size_t> pool_dist(0,
+                                                    candidate_pool.size() - 1);
     for (size_t i = 0; i < pop_size; ++i) {
       population.push_back(candidate_pool[pool_dist(rng)]);
     }
@@ -2108,27 +2164,29 @@ SolveResult SyGuSSolver::solve(const SyGuSProgram& original_program,
       double best_fitness = 0.0;
       for (size_t i = 0; i < pop_size; ++i) {
         fitness[i] = candidateFitness(program, synth_fun, population[i],
-                                       counterexamples);
-        if (fitness[i] > best_fitness) best_fitness = fitness[i];
+                                      counterexamples);
+        if (fitness[i] > best_fitness)
+          best_fitness = fitness[i];
       }
 
       if (options.verbose && (gen % 10 == 0 || best_fitness >= 1.0)) {
         size_t best_idx = 0;
         for (size_t i = 1; i < pop_size; ++i) {
-          if (fitness[i] > fitness[best_idx]) best_idx = i;
+          if (fitness[i] > fitness[best_idx])
+            best_idx = i;
         }
-        std::cerr << "[ga] gen=" << gen
-                  << " best_fitness=" << best_fitness
+        std::cerr << "[ga] gen=" << gen << " best_fitness=" << best_fitness
                   << " best=" << population[best_idx].toString() << "\n";
       }
 
       // Check for perfect fitness
       for (size_t i = 0; i < pop_size; ++i) {
-        if (fitness[i] < 1.0) continue;
+        if (fitness[i] < 1.0)
+          continue;
 
         std::string error;
         if (!satisfiesConstraintsOnSamples(program, synth_fun, population[i],
-                                            counterexamples, error)) {
+                                           counterexamples, error)) {
           continue;
         }
 
@@ -2143,8 +2201,7 @@ SolveResult SyGuSSolver::solve(const SyGuSProgram& original_program,
         }
 
 #if SYGUS_HAVE_CVC5
-        VerifyResult verify =
-            verifyWithCvc5(program, synth_fun, population[i]);
+        VerifyResult verify = verifyWithCvc5(program, synth_fun, population[i]);
 
         if (verify.status == VerifyStatus::Valid) {
           result.status = SolveResult::Status::Solved;
@@ -2176,12 +2233,10 @@ SolveResult SyGuSSolver::solve(const SyGuSProgram& original_program,
       // Elitism: keep top 2
       std::vector<size_t> indices(pop_size);
       std::iota(indices.begin(), indices.end(), 0);
-      std::partial_sort(indices.begin(),
-                        indices.begin() + std::min(size_t{2}, pop_size),
-                        indices.end(),
-                        [&](size_t a, size_t b) {
-                          return fitness[a] > fitness[b];
-                        });
+      std::partial_sort(
+          indices.begin(), indices.begin() + std::min(size_t{2}, pop_size),
+          indices.end(),
+          [&](size_t a, size_t b) { return fitness[a] > fitness[b]; });
       for (size_t i = 0; i < std::min(size_t{2}, pop_size); ++i) {
         next_gen.push_back(population[indices[i]]);
       }
@@ -2211,9 +2266,8 @@ SolveResult SyGuSSolver::solve(const SyGuSProgram& original_program,
     }
 
     result.status = SolveResult::Status::Exhausted;
-    result.message =
-        "GA exhausted " + std::to_string(options.ga_generations) +
-        " generations without finding a valid solution.";
+    result.message = "GA exhausted " + std::to_string(options.ga_generations) +
+                     " generations without finding a valid solution.";
     return result;
   }
 
@@ -2226,11 +2280,13 @@ SolveResult SyGuSSolver::solve(const SyGuSProgram& original_program,
     }
 
     std::mt19937 rng(42);
-    std::uniform_int_distribution<size_t> pool_dist(0, candidate_pool.size() - 1);
+    std::uniform_int_distribution<size_t> pool_dist(0,
+                                                    candidate_pool.size() - 1);
     std::uniform_real_distribution<double> prob(0.0, 1.0);
 
     SExpr current = candidate_pool[pool_dist(rng)];
-    double current_fitness = candidateFitness(program, synth_fun, current, counterexamples);
+    double current_fitness =
+        candidateFitness(program, synth_fun, current, counterexamples);
     SExpr best = current;
     double best_fitness = current_fitness;
     double temp = options.sa_initial_temp;
@@ -2244,7 +2300,8 @@ SolveResult SyGuSSolver::solve(const SyGuSProgram& original_program,
 
     for (size_t step = 0; step < options.sa_max_steps && temp > 1e-6; ++step) {
       SExpr neighbor = mutateExpr(current, candidate_pool, rng);
-      double neighbor_fitness = candidateFitness(program, synth_fun, neighbor, counterexamples);
+      double neighbor_fitness =
+          candidateFitness(program, synth_fun, neighbor, counterexamples);
 
       double delta = neighbor_fitness - current_fitness;
       if (delta > 0 || prob(rng) < std::exp(delta * 100.0 / temp)) {
@@ -2258,8 +2315,7 @@ SolveResult SyGuSSolver::solve(const SyGuSProgram& original_program,
       }
 
       if (options.verbose && (step % 100 == 0 || best_fitness >= 1.0)) {
-        std::cerr << "[sa] step=" << step
-                  << " temp=" << temp
+        std::cerr << "[sa] step=" << step << " temp=" << temp
                   << " best_fitness=" << best_fitness
                   << " current_fitness=" << current_fitness
                   << " best=" << best.toString() << "\n";
@@ -2268,7 +2324,7 @@ SolveResult SyGuSSolver::solve(const SyGuSProgram& original_program,
       if (best_fitness >= 1.0) {
         std::string error;
         if (satisfiesConstraintsOnSamples(program, synth_fun, best,
-                                           counterexamples, error)) {
+                                          counterexamples, error)) {
           ++result.tested_candidates;
 
           if (!options.require_cvc5_verification) {
@@ -2297,8 +2353,10 @@ SolveResult SyGuSSolver::solve(const SyGuSProgram& original_program,
           if (verify.status == VerifyStatus::Counterexample) {
             counterexamples.push_back(std::move(verify.counterexample));
             ++result.counterexamples_found;
-            best_fitness = candidateFitness(program, synth_fun, best, counterexamples);
-            current_fitness = candidateFitness(program, synth_fun, current, counterexamples);
+            best_fitness =
+                candidateFitness(program, synth_fun, best, counterexamples);
+            current_fitness =
+                candidateFitness(program, synth_fun, current, counterexamples);
             if (options.verbose) {
               std::cerr << "[sa] counterexample added, refitting ("
                         << counterexamples.size() << " total)\n";
@@ -2320,16 +2378,15 @@ SolveResult SyGuSSolver::solve(const SyGuSProgram& original_program,
     }
 
     result.status = SolveResult::Status::Exhausted;
-    result.message =
-        "SA exhausted " + std::to_string(options.sa_max_steps) +
-        " steps without finding a valid solution (best fitness: " +
-        std::to_string(best_fitness) + ").";
+    result.message = "SA exhausted " + std::to_string(options.sa_max_steps) +
+                     " steps without finding a valid solution (best fitness: " +
+                     std::to_string(best_fitness) + ").";
     return result;
   }
 
   if (options.verbose) {
-    std::cerr << "[cegis] starting " << result.strategy_name
-              << " with " << candidate_pool.size() << " candidates, "
+    std::cerr << "[cegis] starting " << result.strategy_name << " with "
+              << candidate_pool.size() << " candidates, "
               << counterexamples.size() << " counterexamples\n";
   }
 
@@ -2362,8 +2419,8 @@ SolveResult SyGuSSolver::solve(const SyGuSProgram& original_program,
     ++result.tested_candidates;
 
     if (options.verbose) {
-      std::cerr << "[cegis] round " << round
-                << ": testing " << best_candidate->toString() << "\n";
+      std::cerr << "[cegis] round " << round << ": testing "
+                << best_candidate->toString() << "\n";
     }
 
     if (!options.require_cvc5_verification) {
