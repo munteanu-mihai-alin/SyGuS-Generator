@@ -232,6 +232,14 @@ std::optional<SortDescriptor> parseSort(const SExpr& expr) {
   }
 
   const auto& items = expr.asList();
+  if (items.size() == 2 && items[0].isAtom() && items[0].asAtom() == "BitVec" &&
+      items[1].isAtom()) {
+    int64_t width = 0;
+    if (!tryParseSignedInteger(items[1].asAtom(), width) || width <= 0) {
+      return std::nullopt;
+    }
+    return SortDescriptor{ValueKind::BitVec, static_cast<uint32_t>(width)};
+  }
   if (items.size() == 3 && items[0].isAtom() && items[0].asAtom() == "_" &&
       items[1].isAtom() && items[1].asAtom() == "BitVec" && items[2].isAtom()) {
     int64_t width = 0;

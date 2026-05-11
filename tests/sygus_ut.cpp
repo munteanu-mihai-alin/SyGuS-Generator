@@ -45,6 +45,23 @@ int main() {
   {
     const auto program = parser.parse(
         "(set-logic LIA)\n"
+        "(synth-fun findIdx ((x0 Int) (x1 Int) (k Int)) Int)\n"
+        "(declare-var x0 Int)\n"
+        "(declare-var x1 Int)\n"
+        "(declare-var k Int)\n"
+        "(constraint (>= (findIdx x0 x1 k) 0))\n"
+        "(check-synth)\n");
+    EXPECT_EQ(context, program.logic, std::string("LIA"));
+    EXPECT_EQ(context, program.synth_funs.size(), static_cast<size_t>(1));
+    EXPECT_EQ(context, program.synth_funs[0].return_type, std::string("Int"));
+    EXPECT_EQ(context, program.synth_funs[0].grammar_rules.size(),
+              static_cast<size_t>(0));
+    EXPECT_TRUE(context, program.synth_funs[0].grammar.empty());
+  }
+
+  {
+    const auto program = parser.parse(
+        "(set-logic LIA)\n"
         "(synth-fun f ((x Int)) Int ((Start Int (x 0 1 (+ Start Start)))) )\n"
         "(check-synth)\n");
     EXPECT_EQ(context, program.synth_funs.size(), static_cast<size_t>(1));
@@ -54,6 +71,25 @@ int main() {
     EXPECT_EQ(context, productions.size(), static_cast<size_t>(4));
     EXPECT_EQ(context, productions[3][0]->symbol, std::string("+"));
     EXPECT_EQ(context, productions[3][1]->symbol, std::string("Start"));
+  }
+
+  {
+    const auto program = parser.parse(
+        "(set-logic BV)\n"
+        "(synth-fun inv ((s (BitVec 4)) (t (BitVec 4))) (BitVec 4)\n"
+        "  ((Start (BitVec 4) (s t #x0 (bvnot Start) (bvadd Start Start)))))\n"
+        "(declare-var s (BitVec 4))\n"
+        "(declare-var t (BitVec 4))\n"
+        "(constraint (= (inv s t) s))\n"
+        "(check-synth)\n");
+    EXPECT_EQ(context, program.logic, std::string("BV"));
+    EXPECT_EQ(context, program.synth_funs.size(), static_cast<size_t>(1));
+    EXPECT_EQ(context, program.synth_funs[0].return_type,
+              std::string("(BitVec 4)"));
+    EXPECT_EQ(context, program.synth_funs[0].grammar_rules.size(),
+              static_cast<size_t>(1));
+    EXPECT_EQ(context, program.synth_funs[0].grammar_rules[0].type,
+              std::string("(BitVec 4)"));
   }
 
   {

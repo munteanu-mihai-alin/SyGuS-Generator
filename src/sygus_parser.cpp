@@ -4,6 +4,7 @@
 #include <fstream>
 #include <sstream>
 #include <string_view>
+#include <unordered_map>
 
 namespace {
 
@@ -319,9 +320,81 @@ InvConstraint parseInvConstraintCommand(const std::vector<SExpr>& items) {
   return constraint;
 }
 
+GrammarRule parseGrammarRule(const SExpr& rule_expr) {
+  const auto& rule_items = expectList(rule_expr, "grammar rule");
+  if (rule_items.size() != 3) {
+    throw std::runtime_error(
+        "Expected grammar rule '(NT Sort Productions)', got " +
+        rule_expr.toString());
+  }
+
+  GrammarRule rule;
+  rule.non_terminal = expectAtom(rule_items[0], "grammar non-terminal");
+  rule.sort = rule_items[1];
+  rule.type = normalizeSortText(rule_items[1]);
+
+  const auto& production_items =
+      expectList(rule_items[2], "grammar production list");
+  rule.productions = production_items;
+  return rule;
+}
+
+void addGrammarRule(const GrammarRule& rule, SynthFun& synth_fun) {
+  synth_fun.grammar_rules.push_back(rule);
+
+  std::vector<std::vector<std::shared_ptr<GrammarTerm>>> legacy_productions;
+  legacy_productions.reserve(rule.productions.size());
+  for (const auto& production_expr : rule.productions) {
+    legacy_productions.push_back(makeLegacyProduction(production_expr));
+  }
+  synth_fun.grammar[rule.non_terminal] = std::move(legacy_productions);
+}
+
+void parseLegacySynthFunGrammar(const SExpr& grammar_expr,
+                                SynthFun& synth_fun) {
+  const auto& grammar_rules = expectList(grammar_expr, "synth-fun grammar");
+  for (const auto& rule_expr : grammar_rules) {
+    addGrammarRule(parseGrammarRule(rule_expr), synth_fun);
+  }
+}
+
+void parseModernSynthFunGrammar(const SExpr& predeclaration_expr,
+                                const SExpr& grammar_expr,
+                                SynthFun& synth_fun) {
+  const auto& predeclarations =
+      expectList(predeclaration_expr, "synth-fun non-terminal declarations");
+  std::unordered_map<std::string, std::string> declared_sorts;
+  declared_sorts.reserve(predeclarations.size());
+
+  for (const auto& decl_expr : predeclarations) {
+    const auto& decl_items = expectList(decl_expr, "non-terminal declaration");
+    if (decl_items.size() != 2) {
+      throw std::runtime_error(
+          "Expected non-terminal predeclaration '(NT Sort)', got " +
+          decl_expr.toString());
+    }
+    const std::string& non_terminal =
+        expectAtom(decl_items[0], "non-terminal predeclaration name");
+    declared_sorts.emplace(non_terminal, normalizeSortText(decl_items[1]));
+  }
+
+  const auto& grammar_rules = expectList(grammar_expr, "synth-fun grammar");
+  for (const auto& rule_expr : grammar_rules) {
+    const GrammarRule rule = parseGrammarRule(rule_expr);
+    if (const auto found = declared_sorts.find(rule.non_terminal);
+        found != declared_sorts.end() && found->second != rule.type) {
+      throw std::runtime_error(
+          "Grammar rule sort does not match predeclaration for " +
+          rule.non_terminal);
+    }
+    addGrammarRule(rule, synth_fun);
+  }
+}
+
 SynthFun parseSynthFunCommand(const std::vector<SExpr>& items) {
-  if (items.size() != 5) {
-    throw std::runtime_error("synth-fun expects four arguments");
+  if (items.size() != 4 && items.size() != 5 && items.size() != 6) {
+    throw std::runtime_error(
+        "synth-fun expects either three, four, or five arguments");
   }
 
   SynthFun synth_fun;
@@ -336,31 +409,10 @@ SynthFun parseSynthFunCommand(const std::vector<SExpr>& items) {
   synth_fun.return_sort = items[3];
   synth_fun.return_type = normalizeSortText(items[3]);
 
-  const auto& grammar_rules = expectList(items[4], "synth-fun grammar");
-  for (const auto& rule_expr : grammar_rules) {
-    const auto& rule_items = expectList(rule_expr, "grammar rule");
-    if (rule_items.size() != 3) {
-      throw std::runtime_error(
-          "Expected grammar rule '(NT Sort Productions)', got " +
-          rule_expr.toString());
-    }
-
-    GrammarRule rule;
-    rule.non_terminal = expectAtom(rule_items[0], "grammar non-terminal");
-    rule.sort = rule_items[1];
-    rule.type = normalizeSortText(rule_items[1]);
-
-    const auto& production_items =
-        expectList(rule_items[2], "grammar production list");
-    rule.productions = production_items;
-    synth_fun.grammar_rules.push_back(rule);
-
-    std::vector<std::vector<std::shared_ptr<GrammarTerm>>> legacy_productions;
-    legacy_productions.reserve(production_items.size());
-    for (const auto& production_expr : production_items) {
-      legacy_productions.push_back(makeLegacyProduction(production_expr));
-    }
-    synth_fun.grammar[rule.non_terminal] = std::move(legacy_productions);
+  if (items.size() == 5) {
+    parseLegacySynthFunGrammar(items[4], synth_fun);
+  } else if (items.size() == 6) {
+    parseModernSynthFunGrammar(items[4], items[5], synth_fun);
   }
 
   return synth_fun;

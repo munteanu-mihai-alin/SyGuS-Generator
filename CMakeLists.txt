@@ -125,8 +125,8 @@ if(SYGUS_BUILD_TESTS)
     target_link_options(sygus_mt PRIVATE --coverage)
   endif()
 
-  add_test(NAME sygus_ut COMMAND sygus_ut)
-  add_test(NAME sygus_mt COMMAND sygus_mt)
+  add_test(NAME sygus_ut COMMAND $<TARGET_FILE:sygus_ut>)
+  add_test(NAME sygus_mt COMMAND $<TARGET_FILE:sygus_mt>)
 
   add_custom_target(ut DEPENDS sygus_ut)
   add_custom_target(mt DEPENDS sygus_mt)

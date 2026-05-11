@@ -349,3 +349,136 @@ Suggested commit:
 ```bash
 git commit -m "move handoff log"
 ```
+
+## [2026-05-11] - Download SyGuS-IF specs and pivot parser work to benchmark-only inputs
+
+Model / agent:
+- GPT-5.5 Thinking, reasoning model
+
+Source state:
+- Local repository on `main` after commit `3492071`
+
+User request:
+- Use only real benchmark files to drive parser updates.
+- Download the SyGuS-IF specification files for each version into the project.
+- Summarize the next work items.
+
+Files changed:
+- `third-party/sygus-if-specs/SyGuS-IF_1.0_2014.pdf` - downloaded official original SyGuS-IF proposal
+- `third-party/sygus-if-specs/SyGuS-IF_2015_CLIA_INV.pdf` - downloaded official 2015 CLIA / INV extension
+- `third-party/sygus-if-specs/SyGuS-IF_2016_PBE.pdf` - downloaded official 2016 PBE extension
+- `third-party/sygus-if-specs/SyGuS-IF_2.0_2019.pdf` - downloaded official SyGuS-IF 2.0 spec
+- `third-party/sygus-if-specs/SyGuS-IF_2.1_2021.pdf` - downloaded official SyGuS-IF 2.1 spec
+- `third-party/sygus-if-specs/README.md` - documented source URLs and mapped the versions to the benchmark syntax used in this repo
+
+Deletions / removals:
+- none
+
+Steps taken:
+1. Located the official SyGuS language pages and spec PDFs from `sygus-org.github.io`.
+2. Downloaded the core versioned specs into `third-party/sygus-if-specs/`.
+3. Included the 2015 and 2016 extension specs as well, since older competition inputs can still rely on those forms.
+4. Scanned the currently staged benchmark tree under `third-party/sygus-benchmarks/comp` to decide the parser order of attack based on real inputs.
+
+Validation performed:
+- Verified the downloaded spec files exist under `third-party/sygus-if-specs/`
+- Scanned `third-party/sygus-benchmarks/comp` and confirmed the available years are:
+  - `2017`
+  - `2018`
+  - `2019`
+- Scanned benchmark files and confirmed heavy usage of:
+  - short `synth-fun` declarations without explicit grammars
+  - `synth-inv`
+  - `declare-primed-var`
+  - `inv-constraint`
+  - old bit-vector sort syntax `(BitVec n)`
+  - legacy grammar symbols `Start`, `StartBool`, `Constant`, `Variable`
+- Scanned benchmark files and found no current use of:
+  - `assume`
+  - oracle commands
+  - `chc-constraint`
+  - `optimize-synth`
+
+Known risks / follow-up:
+- The current parser/solver still fails on at least one real 2017 CLIA benchmark because it rejects the short `synth-fun` form without an explicit grammar.
+- The next parser work should stay benchmark-first and fix only syntax/features that are observed in the staged benchmark corpus before expanding to newer optional language features.
+
+Suggested commit:
+```bash
+git commit -m "add sygus-if specs"
+```
+
+## [2026-05-11] - Parser now accepts the staged 2019 competition corpus
+
+Model / agent:
+- GPT-5.5 Thinking, reasoning model
+
+Source state:
+- Local repository on `main` after commit `429ab34`
+
+User request:
+- Investigate the current CI failure.
+- Start extending the parser using only real benchmark-file syntax so it can eventually parse every file in the staged `comp/2019` setup.
+
+Files changed:
+- `src/sygus_parser.cpp` - extended `synth-fun` parsing to accept:
+  - short no-grammar declarations used in real CLIA competition files
+  - legacy inline grammar form
+  - modern predeclared-nonterminal grammar form
+- `src/sygus_solver.cpp` - added support for legacy bit-vector sort syntax `(BitVec n)`
+- `tests/sygus_ut.cpp` - added parser coverage for:
+  - short benchmark-style `synth-fun`
+  - legacy `(BitVec n)` benchmark-style grammar declarations
+- `CMakeLists.txt` - switched `add_test(...)` entries to `$<TARGET_FILE:...>` so local `ctest` resolves the built Windows executables correctly
+
+Deletions / removals:
+- none
+
+Steps taken:
+1. Inspected the public GitHub Actions summary page for run `ci #9` on commit `429ab34`.
+2. Confirmed the visible failing jobs are:
+  - `build-and-test`
+  - `coverage`
+3. Confirmed the Node 20 warnings shown on the run page are warnings only, not the primary failure cause.
+4. Scanned the staged `third-party/sygus-benchmarks/comp/2019` tree and identified the dominant real syntax forms:
+  - short `synth-fun` declarations without explicit grammars
+  - old bit-vector sort syntax `(BitVec n)`
+  - heavy use of invariant syntax via `synth-inv`, `declare-primed-var`, and `inv-constraint`
+5. Patched the parser against those observed benchmark forms only.
+6. Built a parser-only local executable and swept the entire staged `comp/2019` corpus.
+
+Validation performed:
+- public GitHub Actions summary page:
+  - `https://github.com/munteanu-mihai-alin/SyGuS-Generator/actions/runs/25644300220`
+  - observed:
+    - `build-and-test` exit code `1`
+    - `coverage` exit code `2`
+- parser-only build:
+  - `cmake -S . -B build-parse2019 -G Ninja -D SYGUS_BUILD_SOLVER=OFF -D SYGUS_BUILD_TESTS=OFF -D CMAKE_CXX_COMPILER=D:/msys64/ucrt64/bin/g++.exe`
+  - `cmake --build build-parse2019 -j 4`
+- representative real-file parses:
+  - `comp/2019/CLIA_Track/from_2018/arraysearch16.sl`
+  - `comp/2019/General_Track/bv-conditional-inverses/find_inv_bvsge_bvadd_4bit.sl`
+  - `comp/2019/Inv_Track/From2018/bk-nat.sl`
+  - all returned success after the parser patch
+- full staged 2019 sweep:
+  - total checked: `2854`
+  - total parse failures: `0`
+- local no-cvc5 test build:
+  - `cmake -S . -B build-local-nocvc5 -G Ninja -D SYGUS_BUILD_TESTS=ON -D SYGUS_BUILD_SOLVER=ON -D SYGUS_REQUIRE_CVC5=OFF -D CMAKE_DISABLE_FIND_PACKAGE_cvc5=TRUE -D CMAKE_CXX_COMPILER=D:/msys64/ucrt64/bin/g++.exe`
+  - `cmake --build build-local-nocvc5 -j 4`
+  - `ctest --test-dir build-local-nocvc5 --output-on-failure`
+  - result: all tests passed
+
+Known risks / follow-up:
+- The staged `comp/2019` corpus now parses successfully in parser-only mode, but that does not mean the solver can solve or even semantically handle those files yet.
+- The precise root cause of the current remote `build-and-test` / `coverage` CI failures is still only partially inspected because:
+  - `gh` is not installed in the current shell
+  - the GitHub app token available in this session is expired
+  - signed-out GitHub pages expose the run summary and annotations, but not full logs
+- The next best move is to push the parser/test/CMake fixes and then inspect the next CI run, which should be narrower and easier to diagnose.
+
+Suggested commit:
+```bash
+git commit -m "expand benchmark parser"
+```

@@ -17,7 +17,7 @@ Makefile
 build.ninja
 .ninja_deps
 .ninja_log
-
+.idea/*
 *.o
 *.obj
 *.a
