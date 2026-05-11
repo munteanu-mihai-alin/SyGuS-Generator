@@ -12,6 +12,37 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+function(sygus_propagate_cvc5_link_dirs target_name)
+  if(NOT TARGET cvc5::cvc5)
+    return()
+  endif()
+
+  set(_cvc5_lib_dirs "")
+  get_target_property(_cvc5_configs cvc5::cvc5 IMPORTED_CONFIGURATIONS)
+  foreach(_config IN LISTS _cvc5_configs)
+    get_target_property(_cvc5_location cvc5::cvc5 "IMPORTED_LOCATION_${_config}")
+    if(_cvc5_location)
+      get_filename_component(_cvc5_lib_dir "${_cvc5_location}" DIRECTORY)
+      list(APPEND _cvc5_lib_dirs "${_cvc5_lib_dir}")
+    endif()
+  endforeach()
+
+  if(NOT _cvc5_lib_dirs)
+    get_target_property(_cvc5_location cvc5::cvc5 IMPORTED_LOCATION)
+    if(_cvc5_location)
+      get_filename_component(_cvc5_lib_dir "${_cvc5_location}" DIRECTORY)
+      list(APPEND _cvc5_lib_dirs "${_cvc5_lib_dir}")
+    endif()
+  endif()
+
+  list(REMOVE_DUPLICATES _cvc5_lib_dirs)
+  if(_cvc5_lib_dirs)
+    # Static cvc5 exports cadical/picpoly as plain link names, so consumers
+    # must inherit the package lib directory for the transitive link step.
+    target_link_directories(${target_name} PUBLIC ${_cvc5_lib_dirs})
+  endif()
+endfunction()
+
 add_library(sygus_parser
   src/sygus_parser.cpp
 )
@@ -65,6 +96,7 @@ if(SYGUS_BUILD_SOLVER)
 
   if(cvc5_FOUND)
     target_link_libraries(sygus_solver PUBLIC cvc5::cvc5 cvc5::cvc5parser)
+    sygus_propagate_cvc5_link_dirs(sygus_solver)
     target_compile_definitions(sygus_solver PUBLIC SYGUS_HAVE_CVC5=1)
   else()
     target_compile_definitions(sygus_solver PUBLIC SYGUS_HAVE_CVC5=0)

@@ -482,3 +482,67 @@ Suggested commit:
 ```bash
 git commit -m "expand benchmark parser"
 ```
+
+## [2026-05-11] - Diagnose CI cvc5 transitive-link failure and propagate cvc5 lib dirs
+
+Model / agent:
+- GPT-5.5 Thinking, reasoning model
+
+Source state:
+- Local repository on `main` after commit `429ab34`
+
+User request:
+- Check whether the current CI failure is caused by missing `cadical`.
+
+Files changed:
+- `CMakeLists.txt` - added a helper that propagates the discovered `cvc5` package `lib` directory to `sygus_solver` so downstream targets inherit the linker search path for `cadical`, `picpoly`, and related static transitive libraries
+- `agent/AGENT_HANDOFF_LOG.md` - recorded this diagnosis and the follow-up state
+
+Deletions / removals:
+- none
+
+Steps taken:
+1. Re-checked the latest public GitHub Actions run summary for `ci #9` on commit `429ab34` from May 11, 2026.
+2. Confirmed that `prepare-linux-deps` succeeded and produced the dependency-bundle artifact, while `build-and-test` and `coverage` failed later in the workflow.
+3. Inspected the exported `cvc5` package metadata from the local prebuilt prefix and found that it links transitive libraries by bare names:
+   - `cadical`
+   - `picpoly`
+   - `picpolyxx`
+   - `gmp`
+4. Inspected the staged `third-party/cvc5` source and confirmed that static builds intentionally install those libraries into the dependency prefix, which means the likely problem is not "never built" but "not on the consumer link search path."
+5. Patched this repository's `CMakeLists.txt` so the `sygus_solver` target inherits the `cvc5` prefix `lib` directory from the imported `cvc5::cvc5` target.
+6. Reconfigured and rebuilt against the external Windows `D:\cvc5-Win64-static` prefix to verify the linker line shape.
+
+Validation performed:
+- Public Actions summary:
+  - `https://github.com/munteanu-mihai-alin/SyGuS-Generator/actions/runs/25644300220`
+  - observed:
+    - `prepare-linux-deps` success
+    - `build-and-test` exit code `1`
+    - `coverage` exit code `2`
+- Inspected local `cvc5` package export:
+  - `D:\cvc5-Win64-static\lib\cmake\cvc5\cvc5Targets.cmake`
+  - found:
+    - `INTERFACE_LINK_LIBRARIES "$<LINK_ONLY:>;$<LINK_ONLY:cadical>;picpoly;picpolyxx;gmp"`
+- Inspected staged `cvc5` source:
+  - `third-party/cvc5/cmake/FindCaDiCaL.cmake`
+    - installs `libcadical.a` for static builds
+  - `third-party/cvc5/cmake/FindPoly.cmake`
+    - installs `libpicpoly*` for static builds
+  - `third-party/cvc5/src/CMakeLists.txt`
+    - exports install-interface links for `cadical`, `picpoly`, and `picpolyxx`
+- Local rebuild against the external Windows prefix after the patch:
+  - the link line now includes `-LD:/cvc5-Win64-static/lib`
+  - the previous `cannot find -lcadical` / `-lpicpoly` failure shape is gone
+  - the remaining Windows failure is different:
+    - unresolved `__imp__...` cvc5 API symbols, consistent with a separate import/static mismatch in that external prebuilt package
+
+Known risks / follow-up:
+- The CI diagnosis is now much stronger: `cadical` is very likely part of the failure, but the underlying issue is the transitive static-library search path rather than simply forgetting to archive `libcadical.a`.
+- The Windows `D:\cvc5-Win64-static` package still appears incompatible with the local UCRT consumer build after the `cadical` fix, due to unresolved imported cvc5 API symbols. That is a separate Windows packaging/runtime issue and should not be conflated with the Linux CI failure.
+- The next useful check is to push this CMake fix and inspect the next Linux CI run. If the hypothesis is right, `build-and-test` and `coverage` should get past the `cadical`/`picpoly` link stage and either go green or fail later for a narrower reason.
+
+Suggested commit:
+```bash
+git commit -m "fix cvc5 link dirs"
+```
