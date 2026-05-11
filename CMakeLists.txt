@@ -95,7 +95,7 @@ if(SYGUS_BUILD_SOLVER)
   target_compile_features(sygus_solver PUBLIC cxx_std_20)
 
   if(cvc5_FOUND)
-    target_link_libraries(sygus_solver PUBLIC cvc5::cvc5 cvc5::cvc5parser)
+    target_link_libraries(sygus_solver PUBLIC cvc5::cvc5)
     sygus_propagate_cvc5_link_dirs(sygus_solver)
     target_compile_definitions(sygus_solver PUBLIC SYGUS_HAVE_CVC5=1)
   else()
