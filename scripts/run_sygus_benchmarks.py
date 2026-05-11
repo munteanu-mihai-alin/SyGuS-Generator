@@ -66,11 +66,11 @@ def discover_solver_binary() -> Path | None:
     return Path(solver_on_path) if solver_on_path else None
 
 
-def default_solver_command() -> str:
+def default_solver_command(strategy: str | None = None) -> str:
     solver_binary = discover_solver_binary()
-    if solver_binary is not None:
-        return f'"{solver_binary}" --json --no-cvc5-verify "{{input}}"'
-    return 'sygus_solve --json --no-cvc5-verify "{input}"'
+    binary = f'"{solver_binary}"' if solver_binary is not None else "sygus_solve"
+    strategy_flag = f" --strategy {strategy}" if strategy else ""
+    return f'{binary} --json{strategy_flag} "{{input}}"'
 
 
 def discover_cvc5_binary() -> Path | None:
@@ -376,6 +376,12 @@ def parse_args() -> argparse.Namespace:
         help="Parallel worker process count",
     )
     parser.add_argument(
+        "--strategy",
+        choices=["enum", "best-first", "ga", "sa"],
+        default=None,
+        help="Synthesis strategy to pass to the solver (enum, best-first, ga)",
+    )
+    parser.add_argument(
         "--solver-command",
         default=None,
         help='Command template for the local solver, e.g. \'"build-ucrt/sygus_solve.exe --json --no-cvc5-verify {input}"\'',
@@ -424,7 +430,7 @@ def main() -> int:
         raise RuntimeError(f"No benchmark files found under {benchmark_root}")
 
     worker_count = max(1, min(args.workers, len(benchmarks)))
-    solver_command = args.solver_command or default_solver_command()
+    solver_command = args.solver_command or default_solver_command(args.strategy)
     cvc5_command = args.cvc5_command or default_cvc5_command(args.timeout)
     solver_runtime_dir = infer_runtime_dir(solver_command)
 

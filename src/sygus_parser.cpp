@@ -291,8 +291,9 @@ DefineFun parseDefineFunCommand(const std::vector<SExpr>& items) {
 }
 
 SynthInv parseSynthInvCommand(const std::vector<SExpr>& items) {
-  if (items.size() != 3) {
-    throw std::runtime_error("synth-inv expects two arguments");
+  if (items.size() < 3 || items.size() > 5) {
+    throw std::runtime_error(
+        "synth-inv expects two to four arguments");
   }
 
   SynthInv synth_inv;

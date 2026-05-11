@@ -624,7 +624,130 @@ The predictor sits between enumeration and verification to avoid expensive SMT c
 - `model-final.json` — trained model (JSON format)
 
 ### What's next
+- Benchmark all three strategies against CVC4 baseline on 2019 competition corpus
+- Tune GA hyperparameters (population size, generations, mutation/crossover rates)
 - Improve negative sample diversity (use our solver's enumeration for structurally different candidates)
 - Tune SVM hyperparameters (C, gamma) with cross-validation
-- Fix cvc5 linking on UCRT so predictor + SMT verification work together
-- Benchmark predictor impact on solve time across competition tracks
+
+---
+
+## Session 5 — Fix cvc5 linking + implement best-first and GA strategies (2026-05-11)
+
+### What changed
+
+#### cvc5 static linking fixed (3 issues resolved)
+1. **`__imp_` dllimport symbols** — Fixed by adding `CVC5_STATIC_DEFINE` compile definition
+2. **`GetProcessMemoryInfo` undefined** — cadical needs psapi; fixed by linking `psapi` on WIN32
+3. **`seekpos` ABI mismatch** (GCC 10 cvc5 build vs GCC 15 local build) — Fixed with `src/cvc5_compat_shim.cpp` providing the missing mangled symbol via `extern "C"`, linked as an OBJECT library after cvc5 to resolve link order
+
+Also needed `TMPDIR=/d/tmp` since C: drive was full and GCC couldn't write temp files.
+
+#### Two new synthesis strategies added
+- **`--strategy enum`** (default) — existing bottom-up enumeration CEGIS loop (unchanged)
+- **`--strategy best-first`** — same enumeration, but candidates sorted by SVM predictor score (descending) before CEGIS. Higher-confidence candidates get tested first. Requires `--model`.
+- **`--strategy ga`** — genetic algorithm:
+  - Population seeded from enumerated candidate pool
+  - Fitness = fraction of sample constraints satisfied
+  - Tournament selection, subtree crossover, subtree mutation (donor from candidate pool)
+  - Elitism (top 2 preserved each generation)
+  - Configurable via `--ga-population N` and `--ga-generations N`
+  - Verified solutions through cvc5 when found
+- **CLI**: `--strategy enum|best-first|ga`, `--ga-population N`, `--ga-generations N`
+- **JSON output**: Added `strategy` and `ga_generations_used` fields
+- **Benchmark runner**: Added `--strategy` flag that gets passed to solver command
+
+### Files changed
+- `CMakeLists.txt` — Added cvc5 ABI shim as OBJECT library, linked after cvc5
+- `src/cvc5_compat_shim.cpp` — ABI compatibility shim for seekpos symbol mismatch
+- `include/sygus_solver.hpp` — Added `SearchStrategy` enum, GA options to `SolveOptions`, `strategy_name` and `ga_generations_used` to `SolveResult`
+- `src/sygus_solver.cpp` — Added GA helper functions (crossover, mutation, fitness), best-first sorting, GA CEGIS loop
+- `src/sygus_solve_main.cpp` — Added `--strategy`, `--ga-population`, `--ga-generations` CLI flags and new output fields
+- `scripts/run_sygus_benchmarks.py` — Added `--strategy` flag
+- `agent/AGENT_HANDOFF_LOG.md` — This entry
+
+### Validation performed
+- `ctest --test-dir build --output-on-failure` — 2/2 tests passed
+- `sygus_solve --json --strategy enum max2.sl` — solved, cvc5 verified, 1 CEGIS round
+- `sygus_solve --json --strategy best-first max2.sl` — solved, cvc5 verified, 1 CEGIS round
+- `sygus_solve --json --strategy ga --ga-generations 50 max2.sl` — solved, cvc5 verified, 12 GA generations
+- All strategies produce `"cvc5_available": true, "cvc5_verified": true`
+
+### Known risks / follow-up
+- C: drive is completely full (0 bytes free); builds require `TMPDIR=/d/tmp`
+- Best-first strategy only helps when `--model` is provided; without it, candidate order is same as enum
+- GA crossover/mutation can produce malformed expressions if subtree replacement creates type mismatches; fitness evaluation catches these via exception handling
+- The default grammar-less `synth-fun` benchmarks still return "unsupported" — auto-grammar generation needed for broader benchmark coverage
+- Benchmark comparison of all 3 strategies vs CVC4 baseline is the next step
+
+---
+
+## Session 6 — Auto-grammar, BV ops, inv-constraint, let, SA strategy (2026-05-11)
+
+### What changed
+
+#### Auto-grammar generation (biggest impact)
+When `synth-fun` has no explicit grammar, the solver now generates a default grammar based on the return sort and logic:
+- **LIA/NIA**: Int operators (`+`, `-`, `*`, `ite`) + Bool operators (`and`, `or`, `not`, `=>`, comparisons `<=`, `<`, `=`, `>=`, `>`)
+- **BV**: bit-vector operators (`bvadd`, `bvsub`, `bvand`, `bvor`, `bvxor`, `bvnot`, `bvneg`, `bvshl`, `bvlshr`, `bvashr`, `ite`) + Bool comparisons
+- Parameters of matching sort are included as terminals
+- Constants `0`, `1` for Int; `bv0`, `bv1` for BitVec; `true`, `false` for Bool
+
+This unlocks the vast majority of 2017–2019 competition benchmarks that previously returned "unsupported" (e.g., `fg_max2.sl`, `returnmax2numbers.sl` now solve correctly with auto-generated grammar).
+
+#### Additional BV operators
+Evaluator + cvc5 translator now support:
+- Shifts: `bvshl`, `bvlshr`, `bvashr`
+- Division: `bvudiv`, `bvurem`, `bvsdiv`, `bvsrem`, `bvsmod`
+- Negation: `bvneg`
+- Comparisons: `bvult`, `bvule`, `bvugt`, `bvuge`, `bvslt`, `bvsle`, `bvsgt`, `bvsge`
+
+#### Additional Int/Bool operators
+- `div` (SMT-LIB integer division), `mod`, `abs`, `xor` (Bool)
+
+#### `let` expression support
+Both the evaluator and cvc5 translator now handle `let` bindings, used in some competition benchmarks.
+
+#### synth-inv + inv-constraint support
+- `synth-inv` is converted to `synth-fun` returning Bool
+- `inv-constraint inv pre trans post` generates three constraints:
+  - `pre(x) => inv(x)`
+  - `inv(x) /\ trans(x,x') => inv(x')`
+  - `inv(x) => post(x)`
+- `declare-primed-var` handled by converting to regular `declare-var` plus primed copies
+
+#### Bool return sort
+Previously only Int and BitVec were supported as synth-fun return sorts. Bool is now supported.
+
+#### SA (simulated annealing) strategy
+Ported from old prototype into the current solver:
+- Single-trajectory search with Metropolis acceptance
+- Mutation via subtree replacement from candidate pool
+- Temperature-based acceptance of worse solutions
+- Counterexample feedback on fitness=1.0 candidates
+- CLI: `--strategy sa`, `--sa-steps N`
+
+### Files changed
+- `src/sygus_solver.cpp` — +1057 lines: auto-grammar generation, inv-constraint conversion, `let` support, BV/Int/Bool operators, SA strategy
+- `src/sygus_solve_main.cpp` — Added `--sa-steps`, `--verbose` CLI flags
+- `src/sygus_parser.cpp` — Relaxed `synth-inv` parsing to accept 2–4 arguments
+- `include/sygus_solver.hpp` — Added SA options, verbose flag
+- `scripts/run_sygus_benchmarks.py` — Added `--strategy sa` choice
+- `CMakeLists.txt` — Added cvc5 compat shim, psapi linking
+- `src/cvc5_compat_shim.cpp` — ABI shim for GCC 10/15 seekpos mismatch
+- `.gitignore` — Added `tmp/`
+- `agent/AGENT_HANDOFF_LOG.md` — This entry
+
+### Validation performed
+- `ctest --test-dir build --output-on-failure` — 2/2 tests passed
+- `fg_max2.sl` (no grammar) — solved with auto-grammar: `(ite (<= x y) y x)`, cvc5 verified
+- `returnmax2numbers.sl` (no grammar) — solved: `(ite (<= x1 x2) x2 x1)`, cvc5 verified
+- `max.sl` (explicit grammar) — still solves correctly (regression check)
+- `100_10.sl` (BV PBE) — no longer crashes on bvlshr/bvshl, enumerates 533 candidates
+- `anfp.sl` (synth-inv) — no longer "unsupported", converts to synth-fun + constraints
+- `diff.sl` (2018 CLIA, no grammar) — auto-grammar generated, exhausted at size 8 (correct behavior)
+
+### Known risks / follow-up
+- Enumeration performance is the main bottleneck: 3+ variable LIA benchmarks time out during enumeration at size 8
+- Invariant synthesis works structurally but real inv benchmarks are hard to solve with small expression sizes
+- String operations (PBE_Strings_Track) are not yet supported
+- Multi-synth-fun problems still unsupported

@@ -36,6 +36,7 @@ build.ninja
 
 __pycache__/
 
+tmp/
 results/
 coverage/
 coverage-html/

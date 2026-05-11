@@ -7,9 +7,12 @@
 #include <cctype>
 #include <cstdint>
 #include <functional>
+#include <iostream>
 #include <limits>
 #include <map>
+#include <numeric>
 #include <optional>
+#include <random>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -414,7 +417,9 @@ Value applyBuiltin(const std::string& op, const std::vector<Value>& args) {
   }
 
   if (op == "bvadd" || op == "bvsub" || op == "bvmul" || op == "bvand" ||
-      op == "bvor" || op == "bvxor") {
+      op == "bvor" || op == "bvxor" || op == "bvudiv" || op == "bvurem" ||
+      op == "bvshl" || op == "bvlshr" || op == "bvashr" || op == "bvsdiv" ||
+      op == "bvsrem" || op == "bvsmod") {
     if (args.size() != 2 || args[0].kind() != ValueKind::BitVec ||
         args[1].kind() != ValueKind::BitVec) {
       throw std::runtime_error("'" + op + "' expects two bit-vector arguments");
@@ -437,10 +442,132 @@ Value applyBuiltin(const std::string& op, const std::vector<Value>& args) {
       value = left.value & right.value;
     } else if (op == "bvor") {
       value = left.value | right.value;
-    } else {
+    } else if (op == "bvxor") {
       value = left.value ^ right.value;
+    } else if (op == "bvudiv") {
+      value = right.value == 0 ? maskBitVector(~uint64_t{0}, left.width)
+                               : left.value / right.value;
+    } else if (op == "bvurem") {
+      value = right.value == 0 ? left.value : left.value % right.value;
+    } else if (op == "bvshl") {
+      value = right.value >= left.width ? 0 : left.value << right.value;
+    } else if (op == "bvlshr") {
+      value = right.value >= left.width ? 0 : left.value >> right.value;
+    } else if (op == "bvashr") {
+      bool sign = (left.value >> (left.width - 1)) & 1;
+      if (right.value >= left.width) {
+        value = sign ? maskBitVector(~uint64_t{0}, left.width) : 0;
+      } else {
+        if (sign) {
+          uint64_t fill = maskBitVector(~uint64_t{0}, left.width)
+                          << (left.width - right.value);
+          value = (left.value >> right.value) | fill;
+        } else {
+          value = left.value >> right.value;
+        }
+      }
+    } else if (op == "bvsdiv") {
+      if (right.value == 0) {
+        value = maskBitVector(~uint64_t{0}, left.width);
+      } else {
+        int64_t sl = static_cast<int64_t>(left.value << (64 - left.width)) >>
+                     (64 - left.width);
+        int64_t sr = static_cast<int64_t>(right.value << (64 - left.width)) >>
+                     (64 - left.width);
+        value = static_cast<uint64_t>(sl / sr);
+      }
+    } else if (op == "bvsrem") {
+      if (right.value == 0) {
+        value = left.value;
+      } else {
+        int64_t sl = static_cast<int64_t>(left.value << (64 - left.width)) >>
+                     (64 - left.width);
+        int64_t sr = static_cast<int64_t>(right.value << (64 - left.width)) >>
+                     (64 - left.width);
+        value = static_cast<uint64_t>(sl % sr);
+      }
+    } else if (op == "bvsmod") {
+      if (right.value == 0) {
+        value = left.value;
+      } else {
+        int64_t sl = static_cast<int64_t>(left.value << (64 - left.width)) >>
+                     (64 - left.width);
+        int64_t sr = static_cast<int64_t>(right.value << (64 - left.width)) >>
+                     (64 - left.width);
+        int64_t rem = sl % sr;
+        if (rem != 0 && ((rem ^ sr) < 0)) rem += sr;
+        value = static_cast<uint64_t>(rem);
+      }
     }
     return Value::makeBitVector(value, left.width);
+  }
+
+  if (op == "bvneg") {
+    if (args.size() != 1 || args[0].kind() != ValueKind::BitVec) {
+      throw std::runtime_error("'bvneg' expects one bit-vector argument");
+    }
+    const BitVectorValue bv = args[0].asBitVector();
+    return Value::makeBitVector(~bv.value + 1, bv.width);
+  }
+
+  if (op == "bvult" || op == "bvule" || op == "bvugt" || op == "bvuge" ||
+      op == "bvslt" || op == "bvsle" || op == "bvsgt" || op == "bvsge") {
+    if (args.size() != 2 || args[0].kind() != ValueKind::BitVec ||
+        args[1].kind() != ValueKind::BitVec) {
+      throw std::runtime_error("'" + op + "' expects two bit-vector arguments");
+    }
+    BitVectorValue left = args[0].asBitVector();
+    BitVectorValue right = args[1].asBitVector();
+    if (left.width != right.width) {
+      throw std::runtime_error("bit-vector widths must match for '" + op + "'");
+    }
+    if (op == "bvult") return Value::makeBool(left.value < right.value);
+    if (op == "bvule") return Value::makeBool(left.value <= right.value);
+    if (op == "bvugt") return Value::makeBool(left.value > right.value);
+    if (op == "bvuge") return Value::makeBool(left.value >= right.value);
+    int64_t sl = static_cast<int64_t>(left.value << (64 - left.width)) >>
+                 (64 - left.width);
+    int64_t sr = static_cast<int64_t>(right.value << (64 - left.width)) >>
+                 (64 - left.width);
+    if (op == "bvslt") return Value::makeBool(sl < sr);
+    if (op == "bvsle") return Value::makeBool(sl <= sr);
+    if (op == "bvsgt") return Value::makeBool(sl > sr);
+    return Value::makeBool(sl >= sr);
+  }
+
+  if (op == "div" || op == "mod" || op == "abs") {
+    if (op == "abs") {
+      if (args.size() != 1 || args[0].kind() != ValueKind::Int) {
+        throw std::runtime_error("'abs' expects one Int argument");
+      }
+      int64_t v = args[0].asInt();
+      return Value::makeInt(v < 0 ? -v : v);
+    }
+    if (args.size() != 2 || args[0].kind() != ValueKind::Int ||
+        args[1].kind() != ValueKind::Int) {
+      throw std::runtime_error("'" + op + "' expects two Int arguments");
+    }
+    int64_t a = args[0].asInt();
+    int64_t b = args[1].asInt();
+    if (b == 0) {
+      throw std::runtime_error("Division by zero in '" + op + "'");
+    }
+    if (op == "div") {
+      int64_t q = a / b;
+      if ((a % b != 0) && ((a ^ b) < 0)) --q;
+      return Value::makeInt(q);
+    }
+    int64_t q = a / b;
+    if ((a % b != 0) && ((a ^ b) < 0)) --q;
+    return Value::makeInt(a - q * b);
+  }
+
+  if (op == "xor") {
+    if (args.size() != 2 || args[0].kind() != ValueKind::Bool ||
+        args[1].kind() != ValueKind::Bool) {
+      throw std::runtime_error("'xor' expects two Bool arguments");
+    }
+    return Value::makeBool(args[0].asBool() != args[1].asBool());
   }
 
   throw std::runtime_error("Unsupported operator: " + op);
@@ -500,6 +627,24 @@ Value evaluateExpression(const SExpr& expr, const ValueEnvironment& env,
   }
 
   const std::string& head = items[0].asAtom();
+
+  if (head == "let") {
+    if (items.size() != 3) {
+      throw std::runtime_error("'let' expects bindings and a body");
+    }
+    const auto& bindings = items[1].asList();
+    ValueEnvironment local_env = env;
+    for (const auto& binding : bindings) {
+      const auto& bparts = binding.asList();
+      if (bparts.size() != 2) {
+        throw std::runtime_error("Invalid let binding");
+      }
+      local_env[bparts[0].asAtom()] =
+          evaluateExpression(bparts[1], local_env, context);
+    }
+    return evaluateExpression(items[2], local_env, context);
+  }
+
   std::vector<SExpr> arg_exprs(items.begin() + 1, items.end());
 
   if (context.synth_fun != nullptr && context.synth_candidate != nullptr &&
@@ -991,6 +1136,69 @@ cvc5::Term translateBuiltin(cvc5::Solver& solver, const std::string& op,
   if (op == "bvnot") {
     return solver.mkTerm(cvc5::Kind::BITVECTOR_NOT, {args.at(0)});
   }
+  if (op == "bvneg") {
+    return solver.mkTerm(cvc5::Kind::BITVECTOR_NEG, {args.at(0)});
+  }
+  if (op == "bvudiv") {
+    return solver.mkTerm(cvc5::Kind::BITVECTOR_UDIV, {args.at(0), args.at(1)});
+  }
+  if (op == "bvurem") {
+    return solver.mkTerm(cvc5::Kind::BITVECTOR_UREM, {args.at(0), args.at(1)});
+  }
+  if (op == "bvshl") {
+    return solver.mkTerm(cvc5::Kind::BITVECTOR_SHL, {args.at(0), args.at(1)});
+  }
+  if (op == "bvlshr") {
+    return solver.mkTerm(cvc5::Kind::BITVECTOR_LSHR, {args.at(0), args.at(1)});
+  }
+  if (op == "bvashr") {
+    return solver.mkTerm(cvc5::Kind::BITVECTOR_ASHR, {args.at(0), args.at(1)});
+  }
+  if (op == "bvsdiv") {
+    return solver.mkTerm(cvc5::Kind::BITVECTOR_SDIV, {args.at(0), args.at(1)});
+  }
+  if (op == "bvsrem") {
+    return solver.mkTerm(cvc5::Kind::BITVECTOR_SREM, {args.at(0), args.at(1)});
+  }
+  if (op == "bvsmod") {
+    return solver.mkTerm(cvc5::Kind::BITVECTOR_SMOD, {args.at(0), args.at(1)});
+  }
+  if (op == "bvult") {
+    return solver.mkTerm(cvc5::Kind::BITVECTOR_ULT, {args.at(0), args.at(1)});
+  }
+  if (op == "bvule") {
+    return solver.mkTerm(cvc5::Kind::BITVECTOR_ULE, {args.at(0), args.at(1)});
+  }
+  if (op == "bvugt") {
+    return solver.mkTerm(cvc5::Kind::BITVECTOR_UGT, {args.at(0), args.at(1)});
+  }
+  if (op == "bvuge") {
+    return solver.mkTerm(cvc5::Kind::BITVECTOR_UGE, {args.at(0), args.at(1)});
+  }
+  if (op == "bvslt") {
+    return solver.mkTerm(cvc5::Kind::BITVECTOR_SLT, {args.at(0), args.at(1)});
+  }
+  if (op == "bvsle") {
+    return solver.mkTerm(cvc5::Kind::BITVECTOR_SLE, {args.at(0), args.at(1)});
+  }
+  if (op == "bvsgt") {
+    return solver.mkTerm(cvc5::Kind::BITVECTOR_SGT, {args.at(0), args.at(1)});
+  }
+  if (op == "bvsge") {
+    return solver.mkTerm(cvc5::Kind::BITVECTOR_SGE, {args.at(0), args.at(1)});
+  }
+  if (op == "div") {
+    return solver.mkTerm(cvc5::Kind::INTS_DIVISION, {args.at(0), args.at(1)});
+  }
+  if (op == "mod") {
+    return solver.mkTerm(cvc5::Kind::INTS_MODULUS, {args.at(0), args.at(1)});
+  }
+  if (op == "abs") {
+    return solver.mkTerm(cvc5::Kind::ABS, {args.at(0)});
+  }
+  if (op == "xor") {
+    return solver.mkTerm(cvc5::Kind::XOR, {args.at(0), args.at(1)});
+  }
 
   throw std::runtime_error("Unsupported operator for cvc5 translation: " + op);
 }
@@ -1028,6 +1236,25 @@ cvc5::Term translateExpression(cvc5::Solver& solver, const SExpr& expr,
   }
 
   const std::string& head = items[0].asAtom();
+
+  if (head == "let") {
+    if (items.size() != 3) {
+      throw std::runtime_error("'let' expects bindings and a body");
+    }
+    const auto& bindings = items[1].asList();
+    TermEnvironment local_env = env;
+    for (const auto& binding : bindings) {
+      const auto& bparts = binding.asList();
+      if (bparts.size() != 2) {
+        throw std::runtime_error("Invalid let binding in cvc5 translation");
+      }
+      local_env[bparts[0].asAtom()] = translateExpression(
+          solver, bparts[1], local_env, define_funs, synth_fun, synth_candidate);
+    }
+    return translateExpression(solver, items[2], local_env, define_funs,
+                               synth_fun, synth_candidate);
+  }
+
   std::vector<SExpr> arg_exprs(items.begin() + 1, items.end());
 
   if (synth_fun != nullptr && synth_candidate != nullptr &&
@@ -1148,6 +1375,503 @@ VerifyResult verifyWithCvc5(const SyGuSProgram& program,
 }
 #endif
 
+size_t countNodes(const SExpr& expr) {
+  if (expr.isAtom()) return 1;
+  size_t count = 0;
+  for (const auto& child : expr.asList()) {
+    count += countNodes(child);
+  }
+  return count;
+}
+
+SExpr getSubtreeAt(const SExpr& expr, size_t target_index, size_t& current) {
+  if (current == target_index) return expr;
+  if (expr.isAtom()) { ++current; return expr; }
+  ++current;
+  for (const auto& child : expr.asList()) {
+    if (current > target_index) break;
+    auto result = getSubtreeAt(child, target_index, current);
+    if (current > target_index) return result;
+  }
+  return expr;
+}
+
+SExpr replaceSubtreeAt(const SExpr& expr, size_t target_index,
+                       const SExpr& replacement, size_t& current) {
+  if (current == target_index) {
+    ++current;
+    return replacement;
+  }
+  if (expr.isAtom()) { ++current; return expr; }
+  ++current;
+  std::vector<SExpr> new_items;
+  for (const auto& child : expr.asList()) {
+    new_items.push_back(replaceSubtreeAt(child, target_index, replacement, current));
+  }
+  return SExpr::makeList(std::move(new_items));
+}
+
+SExpr crossover(const SExpr& parent1, const SExpr& parent2, std::mt19937& rng) {
+  size_t n1 = countNodes(parent1);
+  size_t n2 = countNodes(parent2);
+  if (n1 <= 1 || n2 <= 1) return parent1;
+
+  std::uniform_int_distribution<size_t> dist1(0, n1 - 1);
+  std::uniform_int_distribution<size_t> dist2(0, n2 - 1);
+
+  size_t pos2 = dist2(rng);
+  size_t cursor = 0;
+  SExpr subtree = getSubtreeAt(parent2, pos2, cursor);
+
+  size_t pos1 = dist1(rng);
+  cursor = 0;
+  return replaceSubtreeAt(parent1, pos1, subtree, cursor);
+}
+
+SExpr mutateExpr(const SExpr& expr, const std::vector<SExpr>& gene_pool,
+                 std::mt19937& rng) {
+  size_t n = countNodes(expr);
+  if (n == 0 || gene_pool.empty()) return expr;
+
+  std::uniform_int_distribution<size_t> pos_dist(0, n - 1);
+  std::uniform_int_distribution<size_t> pool_dist(0, gene_pool.size() - 1);
+
+  const SExpr& donor = gene_pool[pool_dist(rng)];
+  size_t donor_nodes = countNodes(donor);
+  std::uniform_int_distribution<size_t> donor_dist(0, donor_nodes - 1);
+
+  size_t donor_pos = donor_dist(rng);
+  size_t cursor = 0;
+  SExpr subtree = getSubtreeAt(donor, donor_pos, cursor);
+
+  size_t pos = pos_dist(rng);
+  cursor = 0;
+  return replaceSubtreeAt(expr, pos, subtree, cursor);
+}
+
+double candidateFitness(const SyGuSProgram& program, const SynthFun& synth_fun,
+                        const SExpr& candidate,
+                        const std::vector<ValueEnvironment>& samples) {
+  DefineFunMap define_funs;
+  for (const auto& define_fun : program.define_funs) {
+    define_funs.emplace(define_fun.name, &define_fun);
+  }
+  EvaluationContext context{&define_funs, &synth_fun, &candidate};
+
+  size_t satisfied = 0;
+  size_t total = 0;
+  for (const auto& sample : samples) {
+    for (const auto& constraint : program.constraints) {
+      ++total;
+      try {
+        const Value result =
+            evaluateExpression(constraint.expression, sample, context);
+        if (result.kind() == ValueKind::Bool && result.asBool()) {
+          ++satisfied;
+        }
+      } catch (...) {
+      }
+    }
+  }
+  return total > 0 ? static_cast<double>(satisfied) / static_cast<double>(total)
+                   : 0.0;
+}
+
+SExpr makeSortExpr(const SortDescriptor& sort) {
+  switch (sort.kind) {
+    case ValueKind::Int:
+      return SExpr::makeAtom("Int");
+    case ValueKind::Bool:
+      return SExpr::makeAtom("Bool");
+    case ValueKind::BitVec:
+      return SExpr::makeList({SExpr::makeAtom("_"), SExpr::makeAtom("BitVec"),
+                              SExpr::makeAtom(std::to_string(sort.bit_width))});
+  }
+  return SExpr::makeAtom("Int");
+}
+
+std::vector<GrammarRule> generateDefaultGrammar(
+    const SynthFun& synth_fun, const std::string& logic) {
+  const auto return_sort = parseSort(synth_fun.return_sort);
+  if (!return_sort.has_value()) return {};
+
+  std::set<std::string> param_sort_strs;
+  std::vector<SortDescriptor> param_sorts;
+  for (const auto& param : synth_fun.params) {
+    auto sort = parseSort(param.sort);
+    if (sort.has_value()) {
+      std::string key = sort->toString();
+      if (param_sort_strs.insert(key).second) {
+        param_sorts.push_back(*sort);
+      }
+    }
+  }
+
+  bool has_int = false;
+  bool has_bool = false;
+  bool has_bv = false;
+  uint32_t bv_width = 0;
+
+  if (return_sort->kind == ValueKind::Int) has_int = true;
+  if (return_sort->kind == ValueKind::Bool) has_bool = true;
+  if (return_sort->kind == ValueKind::BitVec) {
+    has_bv = true;
+    bv_width = return_sort->bit_width;
+  }
+  for (const auto& ps : param_sorts) {
+    if (ps.kind == ValueKind::Int) has_int = true;
+    if (ps.kind == ValueKind::Bool) has_bool = true;
+    if (ps.kind == ValueKind::BitVec) {
+      has_bv = true;
+      bv_width = ps.bit_width;
+    }
+  }
+
+  bool is_lia = logic.find("LIA") != std::string::npos ||
+                logic.find("NIA") != std::string::npos ||
+                logic.find("DTLIA") != std::string::npos;
+  bool is_bv = logic.find("BV") != std::string::npos;
+
+  if (!is_lia && !is_bv && has_int) is_lia = true;
+  if (!is_lia && !is_bv && has_bv) is_bv = true;
+
+  std::vector<GrammarRule> rules;
+
+  auto addIntRule = [&]() {
+    GrammarRule int_rule;
+    int_rule.non_terminal = "ntInt";
+    int_rule.sort = SExpr::makeAtom("Int");
+    int_rule.type = "Int";
+
+    int_rule.productions.push_back(SExpr::makeAtom("0"));
+    int_rule.productions.push_back(SExpr::makeAtom("1"));
+
+    for (const auto& param : synth_fun.params) {
+      auto sort = parseSort(param.sort);
+      if (sort.has_value() && sort->kind == ValueKind::Int) {
+        int_rule.productions.push_back(SExpr::makeAtom(param.name));
+      }
+    }
+
+    int_rule.productions.push_back(SExpr::makeList(
+        {SExpr::makeAtom("+"), SExpr::makeAtom("ntInt"),
+         SExpr::makeAtom("ntInt")}));
+    int_rule.productions.push_back(SExpr::makeList(
+        {SExpr::makeAtom("-"), SExpr::makeAtom("ntInt"),
+         SExpr::makeAtom("ntInt")}));
+    int_rule.productions.push_back(SExpr::makeList(
+        {SExpr::makeAtom("*"), SExpr::makeAtom("ntInt"),
+         SExpr::makeAtom("ntInt")}));
+    int_rule.productions.push_back(SExpr::makeList(
+        {SExpr::makeAtom("ite"), SExpr::makeAtom("ntBool"),
+         SExpr::makeAtom("ntInt"), SExpr::makeAtom("ntInt")}));
+
+    rules.push_back(std::move(int_rule));
+  };
+
+  auto addBoolRule = [&]() {
+    GrammarRule bool_rule;
+    bool_rule.non_terminal = "ntBool";
+    bool_rule.sort = SExpr::makeAtom("Bool");
+    bool_rule.type = "Bool";
+
+    bool_rule.productions.push_back(SExpr::makeAtom("true"));
+    bool_rule.productions.push_back(SExpr::makeAtom("false"));
+
+    for (const auto& param : synth_fun.params) {
+      auto sort = parseSort(param.sort);
+      if (sort.has_value() && sort->kind == ValueKind::Bool) {
+        bool_rule.productions.push_back(SExpr::makeAtom(param.name));
+      }
+    }
+
+    bool_rule.productions.push_back(SExpr::makeList(
+        {SExpr::makeAtom("and"), SExpr::makeAtom("ntBool"),
+         SExpr::makeAtom("ntBool")}));
+    bool_rule.productions.push_back(SExpr::makeList(
+        {SExpr::makeAtom("or"), SExpr::makeAtom("ntBool"),
+         SExpr::makeAtom("ntBool")}));
+    bool_rule.productions.push_back(SExpr::makeList(
+        {SExpr::makeAtom("not"), SExpr::makeAtom("ntBool")}));
+    bool_rule.productions.push_back(SExpr::makeList(
+        {SExpr::makeAtom("=>"), SExpr::makeAtom("ntBool"),
+         SExpr::makeAtom("ntBool")}));
+
+    if (has_int) {
+      bool_rule.productions.push_back(SExpr::makeList(
+          {SExpr::makeAtom("<="), SExpr::makeAtom("ntInt"),
+           SExpr::makeAtom("ntInt")}));
+      bool_rule.productions.push_back(SExpr::makeList(
+          {SExpr::makeAtom("<"), SExpr::makeAtom("ntInt"),
+           SExpr::makeAtom("ntInt")}));
+      bool_rule.productions.push_back(SExpr::makeList(
+          {SExpr::makeAtom("="), SExpr::makeAtom("ntInt"),
+           SExpr::makeAtom("ntInt")}));
+      bool_rule.productions.push_back(SExpr::makeList(
+          {SExpr::makeAtom(">="), SExpr::makeAtom("ntInt"),
+           SExpr::makeAtom("ntInt")}));
+      bool_rule.productions.push_back(SExpr::makeList(
+          {SExpr::makeAtom(">"), SExpr::makeAtom("ntInt"),
+           SExpr::makeAtom("ntInt")}));
+    }
+
+    if (has_bv) {
+      bool_rule.productions.push_back(SExpr::makeList(
+          {SExpr::makeAtom("="), SExpr::makeAtom("ntBV"),
+           SExpr::makeAtom("ntBV")}));
+      bool_rule.productions.push_back(SExpr::makeList(
+          {SExpr::makeAtom("bvult"), SExpr::makeAtom("ntBV"),
+           SExpr::makeAtom("ntBV")}));
+      bool_rule.productions.push_back(SExpr::makeList(
+          {SExpr::makeAtom("bvslt"), SExpr::makeAtom("ntBV"),
+           SExpr::makeAtom("ntBV")}));
+    }
+
+    rules.push_back(std::move(bool_rule));
+  };
+
+  auto addBVRule = [&]() {
+    GrammarRule bv_rule;
+    bv_rule.non_terminal = "ntBV";
+    SExpr bv_sort = makeSortExpr(SortDescriptor{ValueKind::BitVec, bv_width});
+    bv_rule.sort = bv_sort;
+    bv_rule.type = bv_sort.toString();
+
+    bv_rule.productions.push_back(SExpr::makeList(
+        {SExpr::makeAtom("_"), SExpr::makeAtom("bv0"),
+         SExpr::makeAtom(std::to_string(bv_width))}));
+    bv_rule.productions.push_back(SExpr::makeList(
+        {SExpr::makeAtom("_"), SExpr::makeAtom("bv1"),
+         SExpr::makeAtom(std::to_string(bv_width))}));
+
+    for (const auto& param : synth_fun.params) {
+      auto sort = parseSort(param.sort);
+      if (sort.has_value() && sort->kind == ValueKind::BitVec &&
+          sort->bit_width == bv_width) {
+        bv_rule.productions.push_back(SExpr::makeAtom(param.name));
+      }
+    }
+
+    bv_rule.productions.push_back(SExpr::makeList(
+        {SExpr::makeAtom("bvadd"), SExpr::makeAtom("ntBV"),
+         SExpr::makeAtom("ntBV")}));
+    bv_rule.productions.push_back(SExpr::makeList(
+        {SExpr::makeAtom("bvsub"), SExpr::makeAtom("ntBV"),
+         SExpr::makeAtom("ntBV")}));
+    bv_rule.productions.push_back(SExpr::makeList(
+        {SExpr::makeAtom("bvand"), SExpr::makeAtom("ntBV"),
+         SExpr::makeAtom("ntBV")}));
+    bv_rule.productions.push_back(SExpr::makeList(
+        {SExpr::makeAtom("bvor"), SExpr::makeAtom("ntBV"),
+         SExpr::makeAtom("ntBV")}));
+    bv_rule.productions.push_back(SExpr::makeList(
+        {SExpr::makeAtom("bvxor"), SExpr::makeAtom("ntBV"),
+         SExpr::makeAtom("ntBV")}));
+    bv_rule.productions.push_back(SExpr::makeList(
+        {SExpr::makeAtom("bvnot"), SExpr::makeAtom("ntBV")}));
+    bv_rule.productions.push_back(SExpr::makeList(
+        {SExpr::makeAtom("bvneg"), SExpr::makeAtom("ntBV")}));
+    bv_rule.productions.push_back(SExpr::makeList(
+        {SExpr::makeAtom("bvshl"), SExpr::makeAtom("ntBV"),
+         SExpr::makeAtom("ntBV")}));
+    bv_rule.productions.push_back(SExpr::makeList(
+        {SExpr::makeAtom("bvlshr"), SExpr::makeAtom("ntBV"),
+         SExpr::makeAtom("ntBV")}));
+    bv_rule.productions.push_back(SExpr::makeList(
+        {SExpr::makeAtom("bvashr"), SExpr::makeAtom("ntBV"),
+         SExpr::makeAtom("ntBV")}));
+    bv_rule.productions.push_back(SExpr::makeList(
+        {SExpr::makeAtom("ite"), SExpr::makeAtom("ntBool"),
+         SExpr::makeAtom("ntBV"), SExpr::makeAtom("ntBV")}));
+
+    rules.push_back(std::move(bv_rule));
+  };
+
+  if (return_sort->kind == ValueKind::Int) {
+    addIntRule();
+    addBoolRule();
+    if (has_bv) addBVRule();
+  } else if (return_sort->kind == ValueKind::Bool) {
+    if (has_int) addIntRule();
+    addBoolRule();
+    if (has_bv) addBVRule();
+  } else if (return_sort->kind == ValueKind::BitVec) {
+    if (has_int) addIntRule();
+    addBoolRule();
+    addBVRule();
+  }
+
+  return rules;
+}
+
+void flattenExprTokens(const SExpr& expr, std::vector<std::string>& output);
+
+SyGuSProgram convertInvToSynthFun(const SyGuSProgram& original) {
+  if (original.synth_invs.empty() && original.inv_constraints.empty()) {
+    return original;
+  }
+
+  SyGuSProgram program = original;
+  program.synth_invs.clear();
+  program.inv_constraints.clear();
+
+  for (const auto& pv : original.declare_primed_vars) {
+    bool found = false;
+    for (const auto& dv : program.declare_vars) {
+      if (dv.name == pv.name) { found = true; break; }
+    }
+    if (!found) {
+      DeclareVar dv;
+      dv.name = pv.name;
+      dv.sort = pv.sort;
+      dv.type = pv.type;
+      program.declare_vars.push_back(std::move(dv));
+    }
+    std::string primed_name = pv.name + "!";
+    bool found_primed = false;
+    for (const auto& dv : program.declare_vars) {
+      if (dv.name == primed_name) { found_primed = true; break; }
+    }
+    if (!found_primed) {
+      DeclareVar dv;
+      dv.name = primed_name;
+      dv.sort = pv.sort;
+      dv.type = pv.type;
+      program.declare_vars.push_back(std::move(dv));
+    }
+  }
+  program.declare_primed_vars.clear();
+
+  for (const auto& synth_inv : original.synth_invs) {
+    SynthFun synth_fun;
+    synth_fun.name = synth_inv.name;
+    synth_fun.params = synth_inv.params;
+    synth_fun.return_sort = SExpr::makeAtom("Bool");
+    synth_fun.return_type = "Bool";
+    program.synth_funs.push_back(std::move(synth_fun));
+  }
+
+  for (const auto& inv_c : original.inv_constraints) {
+    const DefineFun* pre_fun = nullptr;
+    const DefineFun* trans_fun = nullptr;
+    const DefineFun* post_fun = nullptr;
+
+    for (const auto& df : program.define_funs) {
+      if (df.name == inv_c.pre) pre_fun = &df;
+      if (df.name == inv_c.trans) trans_fun = &df;
+      if (df.name == inv_c.post) post_fun = &df;
+    }
+
+    if (!pre_fun || !trans_fun || !post_fun) continue;
+
+    const SynthInv* inv = nullptr;
+    for (const auto& si : original.synth_invs) {
+      if (si.name == inv_c.inv) { inv = &si; break; }
+    }
+    if (!inv) continue;
+
+    auto makeCallArgs = [](const std::string& fn,
+                           const std::vector<TypedIdentifier>& params) {
+      std::vector<SExpr> call;
+      call.push_back(SExpr::makeAtom(fn));
+      for (const auto& p : params) {
+        call.push_back(SExpr::makeAtom(p.name));
+      }
+      return SExpr::makeList(std::move(call));
+    };
+
+    SExpr inv_call = makeCallArgs(inv_c.inv, inv->params);
+
+    // pre(x) => inv(x)
+    {
+      Constraint c;
+      c.expression = SExpr::makeList(
+          {SExpr::makeAtom("=>"), pre_fun->body, inv_call});
+      flattenExprTokens(c.expression, c.expr);
+      program.constraints.push_back(std::move(c));
+    }
+
+    // inv(x) /\ trans(x,x') => inv(x')
+    {
+      std::vector<SExpr> primed_args;
+      primed_args.push_back(SExpr::makeAtom(inv_c.inv));
+      for (const auto& p : inv->params) {
+        primed_args.push_back(SExpr::makeAtom(p.name + "!"));
+      }
+      SExpr inv_primed = SExpr::makeList(std::move(primed_args));
+
+      Constraint c;
+      c.expression = SExpr::makeList(
+          {SExpr::makeAtom("=>"),
+           SExpr::makeList({SExpr::makeAtom("and"), inv_call, trans_fun->body}),
+           inv_primed});
+      flattenExprTokens(c.expression, c.expr);
+      program.constraints.push_back(std::move(c));
+
+      for (const auto& p : inv->params) {
+        bool already_declared = false;
+        for (const auto& dv : program.declare_vars) {
+          if (dv.name == p.name + "!") { already_declared = true; break; }
+        }
+        if (!already_declared) {
+          DeclareVar dv;
+          dv.name = p.name + "!";
+          dv.sort = p.sort;
+          dv.type = p.type;
+          program.declare_vars.push_back(std::move(dv));
+        }
+      }
+    }
+
+    // inv(x) => post(x)
+    {
+      Constraint c;
+      c.expression = SExpr::makeList(
+          {SExpr::makeAtom("=>"), inv_call, post_fun->body});
+      flattenExprTokens(c.expression, c.expr);
+      program.constraints.push_back(std::move(c));
+    }
+
+    for (const auto& p : inv->params) {
+      bool already_declared = false;
+      for (const auto& dv : program.declare_vars) {
+        if (dv.name == p.name) { already_declared = true; break; }
+      }
+      if (!already_declared) {
+        DeclareVar dv;
+        dv.name = p.name;
+        dv.sort = p.sort;
+        dv.type = p.type;
+        program.declare_vars.push_back(std::move(dv));
+      }
+    }
+  }
+
+  return program;
+}
+
+void flattenExprTokens(const SExpr& expr, std::vector<std::string>& output) {
+  if (expr.isAtom()) {
+    output.push_back(expr.asAtom());
+    return;
+  }
+  output.push_back("(");
+  for (const auto& item : expr.asList()) {
+    flattenExprTokens(item, output);
+  }
+  output.push_back(")");
+}
+
+std::string strategyToString(SearchStrategy strategy) {
+  switch (strategy) {
+    case SearchStrategy::Enum: return "enum";
+    case SearchStrategy::BestFirst: return "best-first";
+    case SearchStrategy::GA: return "ga";
+    case SearchStrategy::SA: return "sa";
+  }
+  return "unknown";
+}
+
 }  // namespace
 
 bool SyGuSSolver::hasCvc5() {
@@ -1172,17 +1896,22 @@ std::string SyGuSSolver::statusToString(SolveResult::Status status) {
   return "error";
 }
 
-SolveResult SyGuSSolver::solve(const SyGuSProgram& program,
+SolveResult SyGuSSolver::solve(const SyGuSProgram& original_program,
                                const SolveOptions& options) const {
   SolveResult result;
-  result.logic = program.logic;
+  result.logic = original_program.logic;
   result.cvc5_available = hasCvc5();
 
+  SyGuSProgram program = original_program;
+
   if (!program.synth_invs.empty() || !program.inv_constraints.empty()) {
-    result.status = SolveResult::Status::Unsupported;
-    result.message = "Invariant synthesis is not supported yet.";
-    return result;
+    program = convertInvToSynthFun(program);
+    if (options.verbose) {
+      std::cerr << "[inv] converted synth-inv to synth-fun with "
+                << program.constraints.size() << " constraints\n";
+    }
   }
+
   if (program.synth_funs.empty()) {
     result.status = SolveResult::Status::Unsupported;
     result.message = "No synth-fun command was found.";
@@ -1193,17 +1922,22 @@ SolveResult SyGuSSolver::solve(const SyGuSProgram& program,
     result.message = "Only single synth-fun problems are supported.";
     return result;
   }
-  if (!program.declare_primed_vars.empty()) {
-    result.status = SolveResult::Status::Unsupported;
-    result.message = "Primed variables are currently unsupported.";
-    return result;
-  }
 
-  const SynthFun& synth_fun = program.synth_funs.front();
+  SynthFun& synth_fun = program.synth_funs.front();
+
   if (synth_fun.grammar_rules.empty()) {
-    result.status = SolveResult::Status::Unsupported;
-    result.message = "The synth-fun grammar is empty.";
-    return result;
+    auto generated = generateDefaultGrammar(synth_fun, program.logic);
+    if (generated.empty()) {
+      result.status = SolveResult::Status::Unsupported;
+      result.message =
+          "Cannot generate a default grammar for this problem.";
+      return result;
+    }
+    synth_fun.grammar_rules = std::move(generated);
+    if (options.verbose) {
+      std::cerr << "[grammar] auto-generated " << synth_fun.grammar_rules.size()
+                << " grammar rules\n";
+    }
   }
 
   const auto return_sort = parseSort(synth_fun.return_sort);
@@ -1215,10 +1949,11 @@ SolveResult SyGuSSolver::solve(const SyGuSProgram& program,
   }
 
   if (return_sort->kind != ValueKind::Int &&
+      return_sort->kind != ValueKind::Bool &&
       return_sort->kind != ValueKind::BitVec) {
     result.status = SolveResult::Status::Unsupported;
     result.message =
-        "Only Int and BitVec synth-fun return sorts are supported right now.";
+        "Only Int, Bool, and BitVec synth-fun return sorts are supported.";
     return result;
   }
 
@@ -1288,6 +2023,11 @@ SolveResult SyGuSSolver::solve(const SyGuSProgram& program,
 
   result.enumerated_candidates = candidate_pool.size();
 
+  if (options.verbose) {
+    std::cerr << "[enum] " << candidate_pool.size()
+              << " candidates (max size " << options.max_expression_size << ")\n";
+  }
+
   CandidatePredictor predictor;
   if (!options.model_path.empty()) {
     predictor.loadModel(options.model_path);
@@ -1307,15 +2047,294 @@ SolveResult SyGuSSolver::solve(const SyGuSProgram& program,
     }
     result.ml_filtered_candidates = candidate_pool.size() - filtered.size();
     candidate_pool = std::move(filtered);
+    if (options.verbose) {
+      std::cerr << "[ml] filtered " << result.ml_filtered_candidates
+                << ", kept " << candidate_pool.size() << "\n";
+    }
   }
 
-  DefineFunMap define_funs;
-  for (const auto& define_fun : program.define_funs) {
-    define_funs.emplace(define_fun.name, &define_fun);
+  result.strategy_name = strategyToString(options.strategy);
+
+  // Best-first: sort candidates by predictor score descending
+  if (options.strategy == SearchStrategy::BestFirst && predictor.isLoaded()) {
+    std::vector<std::pair<double, size_t>> scored;
+    scored.reserve(candidate_pool.size());
+    for (size_t i = 0; i < candidate_pool.size(); ++i) {
+      scored.emplace_back(predictor.score(candidate_pool[i], param_names), i);
+    }
+    std::sort(scored.begin(), scored.end(),
+              [](const auto& a, const auto& b) { return a.first > b.first; });
+    std::vector<SExpr> sorted_pool;
+    sorted_pool.reserve(candidate_pool.size());
+    for (const auto& [score, idx] : scored) {
+      sorted_pool.push_back(std::move(candidate_pool[idx]));
+    }
+    candidate_pool = std::move(sorted_pool);
   }
 
-  // CEGIS loop: repeatedly scan candidates against the growing counterexample
-  // set, then verify survivors with SMT.
+  // GA strategy: evolve a population and test the best individuals
+  if (options.strategy == SearchStrategy::GA) {
+    if (candidate_pool.empty()) {
+      result.status = SolveResult::Status::Exhausted;
+      result.message = "No candidates to seed GA population.";
+      return result;
+    }
+
+    std::mt19937 rng(42);
+    const size_t pop_size = std::min(options.ga_population_size,
+                                     std::max(candidate_pool.size(), size_t{2}));
+
+    // Initialize population from candidate pool
+    std::vector<SExpr> population;
+    population.reserve(pop_size);
+    std::uniform_int_distribution<size_t> pool_dist(0, candidate_pool.size() - 1);
+    for (size_t i = 0; i < pop_size; ++i) {
+      population.push_back(candidate_pool[pool_dist(rng)]);
+    }
+
+    std::uniform_real_distribution<double> prob(0.0, 1.0);
+
+    if (options.verbose) {
+      std::cerr << "[ga] population=" << pop_size
+                << " pool=" << candidate_pool.size()
+                << " generations=" << options.ga_generations << "\n";
+    }
+
+    for (size_t gen = 0; gen < options.ga_generations; ++gen) {
+      ++result.ga_generations_used;
+
+      // Evaluate fitness
+      std::vector<double> fitness(pop_size);
+      double best_fitness = 0.0;
+      for (size_t i = 0; i < pop_size; ++i) {
+        fitness[i] = candidateFitness(program, synth_fun, population[i],
+                                       counterexamples);
+        if (fitness[i] > best_fitness) best_fitness = fitness[i];
+      }
+
+      if (options.verbose && (gen % 10 == 0 || best_fitness >= 1.0)) {
+        size_t best_idx = 0;
+        for (size_t i = 1; i < pop_size; ++i) {
+          if (fitness[i] > fitness[best_idx]) best_idx = i;
+        }
+        std::cerr << "[ga] gen=" << gen
+                  << " best_fitness=" << best_fitness
+                  << " best=" << population[best_idx].toString() << "\n";
+      }
+
+      // Check for perfect fitness
+      for (size_t i = 0; i < pop_size; ++i) {
+        if (fitness[i] < 1.0) continue;
+
+        std::string error;
+        if (!satisfiesConstraintsOnSamples(program, synth_fun, population[i],
+                                            counterexamples, error)) {
+          continue;
+        }
+
+        ++result.tested_candidates;
+
+        if (!options.require_cvc5_verification) {
+          result.status = SolveResult::Status::Solved;
+          result.solution = population[i].toString();
+          result.define_fun = renderDefineFun(synth_fun, population[i]);
+          result.message = "GA found candidate (sample-validated only).";
+          return result;
+        }
+
+#if SYGUS_HAVE_CVC5
+        VerifyResult verify =
+            verifyWithCvc5(program, synth_fun, population[i]);
+
+        if (verify.status == VerifyStatus::Valid) {
+          result.status = SolveResult::Status::Solved;
+          result.solution = population[i].toString();
+          result.define_fun = renderDefineFun(synth_fun, population[i]);
+          result.cvc5_verified = true;
+          return result;
+        }
+
+        if (verify.status == VerifyStatus::Counterexample) {
+          counterexamples.push_back(std::move(verify.counterexample));
+          ++result.counterexamples_found;
+        }
+#else
+        result.status = SolveResult::Status::Solved;
+        result.solution = population[i].toString();
+        result.define_fun = renderDefineFun(synth_fun, population[i]);
+        result.message =
+            "cvc5 verification was requested but this build has no cvc5; "
+            "the candidate is sample-validated only.";
+        return result;
+#endif
+      }
+
+      // Tournament selection + crossover + mutation
+      std::vector<SExpr> next_gen;
+      next_gen.reserve(pop_size);
+
+      // Elitism: keep top 2
+      std::vector<size_t> indices(pop_size);
+      std::iota(indices.begin(), indices.end(), 0);
+      std::partial_sort(indices.begin(),
+                        indices.begin() + std::min(size_t{2}, pop_size),
+                        indices.end(),
+                        [&](size_t a, size_t b) {
+                          return fitness[a] > fitness[b];
+                        });
+      for (size_t i = 0; i < std::min(size_t{2}, pop_size); ++i) {
+        next_gen.push_back(population[indices[i]]);
+      }
+
+      auto tournamentSelect = [&]() -> size_t {
+        std::uniform_int_distribution<size_t> dist(0, pop_size - 1);
+        size_t a = dist(rng), b = dist(rng);
+        return fitness[a] >= fitness[b] ? a : b;
+      };
+
+      while (next_gen.size() < pop_size) {
+        size_t p1 = tournamentSelect();
+        size_t p2 = tournamentSelect();
+
+        SExpr child = (prob(rng) < options.ga_crossover_rate)
+                          ? crossover(population[p1], population[p2], rng)
+                          : population[p1];
+
+        if (prob(rng) < options.ga_mutation_rate) {
+          child = mutateExpr(child, candidate_pool, rng);
+        }
+
+        next_gen.push_back(std::move(child));
+      }
+
+      population = std::move(next_gen);
+    }
+
+    result.status = SolveResult::Status::Exhausted;
+    result.message =
+        "GA exhausted " + std::to_string(options.ga_generations) +
+        " generations without finding a valid solution.";
+    return result;
+  }
+
+  // SA strategy: single-trajectory search with Metropolis acceptance
+  if (options.strategy == SearchStrategy::SA) {
+    if (candidate_pool.empty()) {
+      result.status = SolveResult::Status::Exhausted;
+      result.message = "No candidates to seed SA.";
+      return result;
+    }
+
+    std::mt19937 rng(42);
+    std::uniform_int_distribution<size_t> pool_dist(0, candidate_pool.size() - 1);
+    std::uniform_real_distribution<double> prob(0.0, 1.0);
+
+    SExpr current = candidate_pool[pool_dist(rng)];
+    double current_fitness = candidateFitness(program, synth_fun, current, counterexamples);
+    SExpr best = current;
+    double best_fitness = current_fitness;
+    double temp = options.sa_initial_temp;
+
+    if (options.verbose) {
+      std::cerr << "[sa] initial_temp=" << temp
+                << " cooling=" << options.sa_cooling_rate
+                << " max_steps=" << options.sa_max_steps
+                << " pool=" << candidate_pool.size() << "\n";
+    }
+
+    for (size_t step = 0; step < options.sa_max_steps && temp > 1e-6; ++step) {
+      SExpr neighbor = mutateExpr(current, candidate_pool, rng);
+      double neighbor_fitness = candidateFitness(program, synth_fun, neighbor, counterexamples);
+
+      double delta = neighbor_fitness - current_fitness;
+      if (delta > 0 || prob(rng) < std::exp(delta * 100.0 / temp)) {
+        current = std::move(neighbor);
+        current_fitness = neighbor_fitness;
+      }
+
+      if (current_fitness > best_fitness) {
+        best = current;
+        best_fitness = current_fitness;
+      }
+
+      if (options.verbose && (step % 100 == 0 || best_fitness >= 1.0)) {
+        std::cerr << "[sa] step=" << step
+                  << " temp=" << temp
+                  << " best_fitness=" << best_fitness
+                  << " current_fitness=" << current_fitness
+                  << " best=" << best.toString() << "\n";
+      }
+
+      if (best_fitness >= 1.0) {
+        std::string error;
+        if (satisfiesConstraintsOnSamples(program, synth_fun, best,
+                                           counterexamples, error)) {
+          ++result.tested_candidates;
+
+          if (!options.require_cvc5_verification) {
+            result.status = SolveResult::Status::Solved;
+            result.solution = best.toString();
+            result.define_fun = renderDefineFun(synth_fun, best);
+            result.message = "SA found candidate (sample-validated only).";
+            return result;
+          }
+
+#if SYGUS_HAVE_CVC5
+          VerifyResult verify = verifyWithCvc5(program, synth_fun, best);
+
+          if (verify.status == VerifyStatus::Valid) {
+            if (options.verbose) {
+              std::cerr << "[sa] VERIFIED at step " << step << ": "
+                        << best.toString() << "\n";
+            }
+            result.status = SolveResult::Status::Solved;
+            result.solution = best.toString();
+            result.define_fun = renderDefineFun(synth_fun, best);
+            result.cvc5_verified = true;
+            return result;
+          }
+
+          if (verify.status == VerifyStatus::Counterexample) {
+            counterexamples.push_back(std::move(verify.counterexample));
+            ++result.counterexamples_found;
+            best_fitness = candidateFitness(program, synth_fun, best, counterexamples);
+            current_fitness = candidateFitness(program, synth_fun, current, counterexamples);
+            if (options.verbose) {
+              std::cerr << "[sa] counterexample added, refitting ("
+                        << counterexamples.size() << " total)\n";
+            }
+          }
+#else
+          result.status = SolveResult::Status::Solved;
+          result.solution = best.toString();
+          result.define_fun = renderDefineFun(synth_fun, best);
+          result.message =
+              "cvc5 verification was requested but this build has no cvc5; "
+              "the candidate is sample-validated only.";
+          return result;
+#endif
+        }
+      }
+
+      temp *= options.sa_cooling_rate;
+    }
+
+    result.status = SolveResult::Status::Exhausted;
+    result.message =
+        "SA exhausted " + std::to_string(options.sa_max_steps) +
+        " steps without finding a valid solution (best fitness: " +
+        std::to_string(best_fitness) + ").";
+    return result;
+  }
+
+  if (options.verbose) {
+    std::cerr << "[cegis] starting " << result.strategy_name
+              << " with " << candidate_pool.size() << " candidates, "
+              << counterexamples.size() << " counterexamples\n";
+  }
+
+  // Enum and BestFirst strategies share the same CEGIS loop
+  // (BestFirst just has a better candidate ordering from the sort above)
   for (size_t round = 0; round < options.max_cegis_rounds; ++round) {
     ++result.cegis_rounds;
 
@@ -1330,6 +2349,10 @@ SolveResult SyGuSSolver::solve(const SyGuSProgram& program,
     }
 
     if (best_candidate == nullptr) {
+      if (options.verbose) {
+        std::cerr << "[cegis] round " << round
+                  << ": no candidate satisfies all counterexamples\n";
+      }
       result.status = SolveResult::Status::Exhausted;
       result.message =
           "No candidate in the enumeration bank satisfies all counterexamples.";
@@ -1337,6 +2360,11 @@ SolveResult SyGuSSolver::solve(const SyGuSProgram& program,
     }
 
     ++result.tested_candidates;
+
+    if (options.verbose) {
+      std::cerr << "[cegis] round " << round
+                << ": testing " << best_candidate->toString() << "\n";
+    }
 
     if (!options.require_cvc5_verification) {
       result.status = SolveResult::Status::Solved;
@@ -1350,6 +2378,9 @@ SolveResult SyGuSSolver::solve(const SyGuSProgram& program,
     VerifyResult verify = verifyWithCvc5(program, synth_fun, *best_candidate);
 
     if (verify.status == VerifyStatus::Valid) {
+      if (options.verbose) {
+        std::cerr << "[cegis] VERIFIED: " << best_candidate->toString() << "\n";
+      }
       result.status = SolveResult::Status::Solved;
       result.solution = best_candidate->toString();
       result.define_fun = renderDefineFun(synth_fun, *best_candidate);
@@ -1358,6 +2389,10 @@ SolveResult SyGuSSolver::solve(const SyGuSProgram& program,
     }
 
     if (verify.status == VerifyStatus::Counterexample) {
+      if (options.verbose) {
+        std::cerr << "[cegis] counterexample found, adding to set ("
+                  << counterexamples.size() + 1 << " total)\n";
+      }
       counterexamples.push_back(std::move(verify.counterexample));
       ++result.counterexamples_found;
       continue;

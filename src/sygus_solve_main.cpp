@@ -10,7 +10,9 @@ namespace {
 void printUsage() {
   std::cout << "Usage: sygus_solve [--json] [--max-expression-size N] "
                "[--max-candidates N] [--max-cegis-rounds N] [--max-samples N] "
-               "[--no-cvc5-verify] [--model PATH] <input-file>\n";
+               "[--no-cvc5-verify] [--model PATH] "
+               "[--verbose] [--strategy enum|best-first|ga|sa] "
+               "[--ga-population N] [--ga-generations N] [--sa-steps N] <input-file>\n";
 }
 
 bool parseSize(const std::string& text, size_t& output) {
@@ -68,7 +70,11 @@ void printJson(const SolveResult& result) {
   std::cout << "  \"cvc5_available\": "
             << (result.cvc5_available ? "true" : "false") << ",\n";
   std::cout << "  \"cvc5_verified\": "
-            << (result.cvc5_verified ? "true" : "false") << "\n";
+            << (result.cvc5_verified ? "true" : "false") << ",\n";
+  std::cout << "  \"strategy\": \"" << escapeJson(result.strategy_name)
+            << "\",\n";
+  std::cout << "  \"ga_generations_used\": " << result.ga_generations_used
+            << "\n";
   std::cout << "}\n";
 }
 
@@ -87,6 +93,10 @@ void printText(const SolveResult& result) {
   std::cout << "cegis-rounds: " << result.cegis_rounds << "\n";
   std::cout << "counterexamples-found: " << result.counterexamples_found
             << "\n";
+  std::cout << "strategy: " << result.strategy_name << "\n";
+  if (result.ga_generations_used > 0) {
+    std::cout << "ga-generations-used: " << result.ga_generations_used << "\n";
+  }
   if (!result.message.empty()) {
     std::cout << "message: " << result.message << "\n";
   }
@@ -106,6 +116,8 @@ int main(int argc, char* argv[]) {
     const std::string argument = argv[index];
     if (argument == "--json") {
       print_json = true;
+    } else if (argument == "--verbose" || argument == "-v") {
+      options.verbose = true;
     } else if (argument == "--no-cvc5-verify") {
       options.require_cvc5_verification = false;
     } else if (argument == "--max-expression-size") {
@@ -142,6 +154,46 @@ int main(int argc, char* argv[]) {
         return 2;
       }
       options.model_path = argv[++index];
+    } else if (argument == "--strategy") {
+      if (index + 1 >= argc) {
+        std::cerr << "Missing value for --strategy\n";
+        return 2;
+      }
+      std::string strategy_name = argv[++index];
+      if (strategy_name == "enum") {
+        options.strategy = SearchStrategy::Enum;
+      } else if (strategy_name == "best-first") {
+        options.strategy = SearchStrategy::BestFirst;
+      } else if (strategy_name == "ga") {
+        options.strategy = SearchStrategy::GA;
+      } else if (strategy_name == "sa") {
+        options.strategy = SearchStrategy::SA;
+      } else {
+        std::cerr << "Unknown strategy: " << strategy_name
+                  << " (use enum, best-first, ga, or sa)\n";
+        return 2;
+      }
+    } else if (argument == "--ga-population") {
+      if (index + 1 >= argc ||
+          !parseSize(argv[index + 1], options.ga_population_size)) {
+        std::cerr << "Invalid value for --ga-population\n";
+        return 2;
+      }
+      ++index;
+    } else if (argument == "--ga-generations") {
+      if (index + 1 >= argc ||
+          !parseSize(argv[index + 1], options.ga_generations)) {
+        std::cerr << "Invalid value for --ga-generations\n";
+        return 2;
+      }
+      ++index;
+    } else if (argument == "--sa-steps") {
+      if (index + 1 >= argc ||
+          !parseSize(argv[index + 1], options.sa_max_steps)) {
+        std::cerr << "Invalid value for --sa-steps\n";
+        return 2;
+      }
+      ++index;
     } else if (argument == "--help" || argument == "-h") {
       printUsage();
       return 0;
