@@ -546,3 +546,38 @@ Suggested commit:
 ```bash
 git commit -m "fix cvc5 link dirs"
 ```
+
+---
+
+## ⚠️ IMPORTANT — Solver roadmap and architecture decision
+
+Date: 2026-05-11
+
+### Goal
+Build a real SyGuS solver with ML-guided candidate filtering.
+
+### Architecture: CEGIS + ML predictor
+
+The synthesis loop is **CEGIS** (CounterExample-Guided Inductive Synthesis):
+
+1. **Enumerate** candidate programs (best-first search, plain enumeration, or genetic algorithms)
+2. **Predict** — ML filter (SVM or similar) decides if candidate is worth verifying
+3. **Verify** — SMT check against constraints (expensive)
+4. **If counterexample found** — add failed input to constraint list, repeat
+
+The predictor sits between enumeration and verification to avoid expensive SMT calls for obviously wrong candidates. Risk: false negatives (rejecting correct programs). Predictor must be conservative.
+
+### Training data strategy
+Use cvc5 to extract intermediate candidate programs from its own CEGIS loop. Need to investigate:
+- Whether cvc5 supports dumping intermediate candidates (`--sygus-out`, `--trace`, debug options)
+- Whether cvc5 has an option to continue generating programs after finding a solution
+
+### Implementation order
+1. ✅ Parser — verify all 2019 competition files parse correctly
+2. 🔍 Research cvc5 intermediate candidate output options
+3. 🔨 Build basic CEGIS loop in our solver
+4. 🔨 Add ML predictor layer (SVM explored first, alternatives considered)
+
+### Prerequisites
+- Functional parser covering all 2019 competition syntax
+- cvc5 intermediate output capability confirmed (for training data generation)
