@@ -568,16 +568,63 @@ The synthesis loop is **CEGIS** (CounterExample-Guided Inductive Synthesis):
 The predictor sits between enumeration and verification to avoid expensive SMT calls for obviously wrong candidates. Risk: false negatives (rejecting correct programs). Predictor must be conservative.
 
 ### Training data strategy
-Use cvc5 to extract intermediate candidate programs from its own CEGIS loop. Need to investigate:
-- Whether cvc5 supports dumping intermediate candidates (`--sygus-out`, `--trace`, debug options)
-- Whether cvc5 has an option to continue generating programs after finding a solution
+- cvc5 1.1.2 can only parse ~90/2854 SyGuS-Comp 2019 benchmarks (SyGuS 2.0 only)
+- Switched to **CVC4 1.8** (`D:\cvc4-1.8-win64-opt.exe`) with `--lang=sygus1` — parses and solves all 2854 benchmarks
+- CVC4 1.8 solved 709 benchmarks within 10s timeout → positive training samples
+- Negative samples generated via perturbation: variable-only, constants, subtree extraction, operator swaps
+- Final dataset: 6549 samples (718 positive, 5831 negative)
+- CVC4 optimized build has no trace support, so intermediate candidates come from perturbation, not solver traces
 
 ### Implementation order
-1. ✅ Parser — verify all 2019 competition files parse correctly
-2. 🔍 Research cvc5 intermediate candidate output options
-3. 🔨 Build basic CEGIS loop in our solver
-4. 🔨 Add ML predictor layer (SVM explored first, alternatives considered)
+1. ✅ Parser — all 2854 SyGuS-Comp 2019 files parse correctly
+2. ✅ CEGIS loop — implemented in `sygus_solver.cpp`, counterexample extraction from cvc5
+3. ✅ Training data pipeline — `scripts/extract_training_data.py` using CVC4 1.8
+4. ✅ SVM predictor — `scripts/train_predictor.py`, 54 AST features, 87% accuracy
+5. ✅ C++ integration — `CandidatePredictor` class, `--model` CLI flag, pre-filters CEGIS candidate pool
 
-### Prerequisites
-- Functional parser covering all 2019 competition syntax
-- cvc5 intermediate output capability confirmed (for training data generation)
+---
+
+## Session 4 — ML predictor integration (2026-05-11)
+
+### What changed
+- **CVC4 1.8 downloaded** — Windows binary at `D:\cvc4-1.8-win64-opt.exe`, supports `--lang=sygus1` for SyGuS 1.0 syntax
+- **Training data extraction rewritten** (`scripts/extract_training_data.py`):
+  - Uses CVC4 1.8 instead of cvc5 for solution pass (709 vs ~90 solves)
+  - Generates negative candidates by perturbation (subtrees, constants, operator swaps)
+  - Produces JSONL with benchmark, candidate, label, candidate_index
+- **SVM predictor** (`scripts/train_predictor.py`):
+  - 54 features: AST depth/node count, operator frequency vector (46 known ops), variable coverage, let depth, constant count
+  - S-expression tokenizer and AST parser for feature extraction
+  - StandardScaler + RBF-kernel SVM with balanced class weights
+  - Exports model in flat text format for C++ loading
+  - Test results: 87% accuracy, 77% solution recall, 97% rejection precision
+- **C++ CandidatePredictor** (`include/candidate_predictor.hpp`, `src/candidate_predictor.cpp`):
+  - Loads flat-text SVM model (features, scaler, support vectors, dual coefficients)
+  - Extracts same 54 AST features from SExpr nodes
+  - RBF kernel evaluation + decision function
+  - `predict()` returns true/false, `score()` returns raw decision value
+- **CEGIS integration** (`src/sygus_solver.cpp`):
+  - After enumeration, filters candidate_pool through predictor if model loaded
+  - Tracks `ml_filtered_candidates` count
+- **CLI** (`src/sygus_solve_main.cpp`):
+  - `--model PATH` flag to load SVM model
+  - `ml_filtered_candidates` in JSON and text output
+- **CMakeLists.txt**: Added `src/candidate_predictor.cpp` to sygus_solver library
+
+### Build note
+- UCRT build with cvc5 has linker errors (pre-existing DLL import issue)
+- Build without cvc5 works: `cmake -DCMAKE_DISABLE_FIND_PACKAGE_cvc5=ON`
+- All unit and module tests pass
+
+### Files added
+- `include/candidate_predictor.hpp` — SVM predictor header
+- `src/candidate_predictor.cpp` — SVM predictor implementation
+- `scripts/train_predictor.py` — feature extraction + SVM training
+- `model-final.txt` — trained model (flat text, 40 support vectors, 54 features)
+- `model-final.json` — trained model (JSON format)
+
+### What's next
+- Improve negative sample diversity (use our solver's enumeration for structurally different candidates)
+- Tune SVM hyperparameters (C, gamma) with cross-validation
+- Fix cvc5 linking on UCRT so predictor + SMT verification work together
+- Benchmark predictor impact on solve time across competition tracks
