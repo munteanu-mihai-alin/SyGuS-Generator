@@ -1,5 +1,7 @@
 #include "sygus_solver.hpp"
 
+#include "candidate_predictor.hpp"
+
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -1285,6 +1287,27 @@ SolveResult SyGuSSolver::solve(const SyGuSProgram& program,
   }
 
   result.enumerated_candidates = candidate_pool.size();
+
+  CandidatePredictor predictor;
+  if (!options.model_path.empty()) {
+    predictor.loadModel(options.model_path);
+  }
+
+  std::vector<std::string> param_names;
+  for (const auto& param : synth_fun.params) {
+    param_names.push_back(param.name);
+  }
+
+  if (predictor.isLoaded()) {
+    std::vector<SExpr> filtered;
+    for (const auto& expr : candidate_pool) {
+      if (predictor.predict(expr, param_names)) {
+        filtered.push_back(expr);
+      }
+    }
+    result.ml_filtered_candidates = candidate_pool.size() - filtered.size();
+    candidate_pool = std::move(filtered);
+  }
 
   DefineFunMap define_funs;
   for (const auto& define_fun : program.define_funs) {

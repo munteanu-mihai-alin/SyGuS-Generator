@@ -80,6 +80,7 @@ if(SYGUS_BUILD_SOLVER)
 
   add_library(sygus_solver
     src/sygus_solver.cpp
+    src/candidate_predictor.cpp
   )
 
   target_include_directories(sygus_solver

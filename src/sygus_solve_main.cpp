@@ -10,7 +10,7 @@ namespace {
 void printUsage() {
   std::cout << "Usage: sygus_solve [--json] [--max-expression-size N] "
                "[--max-candidates N] [--max-cegis-rounds N] [--max-samples N] "
-               "[--no-cvc5-verify] <input-file>\n";
+               "[--no-cvc5-verify] [--model PATH] <input-file>\n";
 }
 
 bool parseSize(const std::string& text, size_t& output) {
@@ -59,6 +59,8 @@ void printJson(const SolveResult& result) {
             << "\",\n";
   std::cout << "  \"enumerated_candidates\": " << result.enumerated_candidates
             << ",\n";
+  std::cout << "  \"ml_filtered_candidates\": " << result.ml_filtered_candidates
+            << ",\n";
   std::cout << "  \"tested_candidates\": " << result.tested_candidates << ",\n";
   std::cout << "  \"cegis_rounds\": " << result.cegis_rounds << ",\n";
   std::cout << "  \"counterexamples_found\": " << result.counterexamples_found
@@ -78,6 +80,8 @@ void printText(const SolveResult& result) {
   std::cout << "cvc5-verified: " << (result.cvc5_verified ? "yes" : "no")
             << "\n";
   std::cout << "enumerated-candidates: " << result.enumerated_candidates
+            << "\n";
+  std::cout << "ml-filtered-candidates: " << result.ml_filtered_candidates
             << "\n";
   std::cout << "tested-candidates: " << result.tested_candidates << "\n";
   std::cout << "cegis-rounds: " << result.cegis_rounds << "\n";
@@ -132,6 +136,12 @@ int main(int argc, char* argv[]) {
         return 2;
       }
       ++index;
+    } else if (argument == "--model") {
+      if (index + 1 >= argc) {
+        std::cerr << "Missing value for --model\n";
+        return 2;
+      }
+      options.model_path = argv[++index];
     } else if (argument == "--help" || argument == "-h") {
       printUsage();
       return 0;

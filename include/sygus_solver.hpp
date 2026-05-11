@@ -11,6 +11,7 @@ struct SolveOptions {
   size_t max_cegis_rounds = 200;
   size_t max_sample_assignments = 128;
   bool require_cvc5_verification = true;
+  std::string model_path;
 };
 
 struct SolveResult {
@@ -27,6 +28,7 @@ struct SolveResult {
   std::string solution;
   std::string define_fun;
   size_t enumerated_candidates = 0;
+  size_t ml_filtered_candidates = 0;
   size_t tested_candidates = 0;
   size_t cegis_rounds = 0;
   size_t counterexamples_found = 0;

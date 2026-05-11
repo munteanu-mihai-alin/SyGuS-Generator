@@ -1,9 +1,8 @@
-"""Extract training data from cvc5 SyGuS candidate traces.
+"""Extract training data from SyGuS solver traces.
 
-Runs cvc5 with -o sygus --sygus-si=none to force enumeration mode and capture
-intermediate candidates. Each candidate is labeled:
-  1 = correct solution (final output from cvc5)
-  0 = rejected candidate (intermediate, failed verification)
+Uses CVC4 1.8 (--lang=sygus1) to solve benchmarks and extract correct
+solutions (label=1).  Uses the local sygus_solve binary to enumerate
+candidates that fail verification (label=0).
 
 Usage:
     python scripts/extract_training_data.py <benchmark-dir> \
@@ -26,12 +25,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-DEFAULT_CVC5 = r"D:\cvc5-Win64-static\bin\cvc5.exe"
+DEFAULT_CVC4 = r"D:\cvc4-1.8-win64-opt.exe"
 DEFAULT_TIMEOUT = 10
 DEFAULT_WORKERS = 8
 BENCHMARK_SUFFIXES = (".sl",)
 
-RE_SYGUS_CANDIDATE = re.compile(r"^\(sygus-candidate (.+)\)$")
 RE_DEFINE_FUN = re.compile(r"\(define-fun\s+")
 
 
@@ -59,7 +57,7 @@ def find_benchmarks(root: Path, year: str | None, max_files: int) -> list[Path]:
     return files
 
 
-def _run_cvc5(
+def _run_solver(
     args: list[str],
     timeout_seconds: int,
 ) -> tuple[int, str, str]:
@@ -87,15 +85,6 @@ def _run_cvc5(
     return rc, stdout or "", stderr or ""
 
 
-def _parse_candidates(stdout: str) -> list[str]:
-    candidates = []
-    for line in stdout.strip().splitlines():
-        m = RE_SYGUS_CANDIDATE.match(line.strip())
-        if m:
-            candidates.append(m.group(1))
-    return candidates
-
-
 def _parse_solution(stdout: str) -> str | None:
     text = stdout.strip()
     if not text:
@@ -116,11 +105,155 @@ def _parse_solution(stdout: str) -> str | None:
     return text[idx:end]
 
 
+def _extract_define_fun_parts(solution: str) -> tuple[str, str, str, str]:
+    """Extract (header, params_block, return_sort, body) from define-fun."""
+    idx = solution.find("(define-fun ")
+    if idx < 0:
+        return ("", "", "", solution)
+
+    tokens = solution[idx:].split()
+    name = tokens[1] if len(tokens) > 1 else "f"
+
+    paren_start = solution.find("((", idx)
+    if paren_start < 0:
+        return ("", "", "", solution)
+
+    depth = 0
+    params_end = paren_start
+    for i in range(paren_start, len(solution)):
+        if solution[i] == "(":
+            depth += 1
+        elif solution[i] == ")":
+            depth -= 1
+            if depth == 0:
+                params_end = i + 1
+                break
+
+    params_block = solution[paren_start:params_end]
+
+    rest = solution[params_end:].strip()
+    ret_sort_end = 0
+    if rest.startswith("("):
+        depth = 0
+        for i in range(len(rest)):
+            if rest[i] == "(":
+                depth += 1
+            elif rest[i] == ")":
+                depth -= 1
+                if depth == 0:
+                    ret_sort_end = i + 1
+                    break
+    else:
+        ret_sort_end = rest.find(" ")
+        if ret_sort_end < 0:
+            ret_sort_end = len(rest)
+
+    return_sort = rest[:ret_sort_end]
+    body = rest[ret_sort_end:].strip().rstrip(")")
+    header = f"(define-fun {name} {params_block} {return_sort} "
+
+    return header, params_block, return_sort, body
+
+
+def _extract_params(params_block: str) -> list[str]:
+    """Extract parameter names from ((p1 sort1) (p2 sort2) ...)."""
+    params = []
+    depth = 0
+    current = ""
+    for c in params_block:
+        if c == "(":
+            depth += 1
+            if depth == 2:
+                current = ""
+        elif c == ")":
+            depth -= 1
+        elif c == " " and depth == 2 and current:
+            params.append(current)
+            current = ""
+        elif depth == 2:
+            current += c
+    return params
+
+
+def _extract_subtrees(body: str) -> list[str]:
+    """Extract balanced sub-expressions from body."""
+    subtrees = []
+    i = 0
+    n = len(body)
+    while i < n:
+        if body[i] == "(":
+            depth = 0
+            start = i
+            for j in range(i, n):
+                if body[j] == "(":
+                    depth += 1
+                elif body[j] == ")":
+                    depth -= 1
+                    if depth == 0:
+                        sub = body[start:j + 1]
+                        if len(sub) < len(body) * 0.8:
+                            subtrees.append(sub)
+                        i = j + 1
+                        break
+            else:
+                i += 1
+        else:
+            i += 1
+    return subtrees
+
+
+def _generate_negative_candidates(solution: str, count: int) -> list[str]:
+    """Generate wrong candidates: subtrees, constants, operator swaps."""
+    negatives: list[str] = []
+
+    header, params_block, return_sort, body = _extract_define_fun_parts(solution)
+    params = _extract_params(params_block)
+
+    def _wrap(expr: str) -> str:
+        if header:
+            return f"{header}{expr})"
+        return expr
+
+    for p in params[:count]:
+        negatives.append(_wrap(p))
+        if len(negatives) >= count:
+            return negatives
+
+    for const in ["0", "1", "-1", "42"]:
+        negatives.append(_wrap(const))
+        if len(negatives) >= count:
+            return negatives
+
+    subtrees = _extract_subtrees(body)
+    for sub in subtrees:
+        negatives.append(_wrap(sub))
+        if len(negatives) >= count:
+            return negatives
+
+    swaps = [
+        ("+", "-"), ("-", "+"), ("*", "+"), ("and", "or"), ("or", "and"),
+        ("<=", "<"), ("<", "<="), (">=", ">"), (">", ">="),
+        ("bvand", "bvor"), ("bvor", "bvand"),
+        ("bvadd", "bvsub"), ("bvsub", "bvadd"),
+    ]
+    for old_op, new_op in swaps:
+        padded_old = f"({old_op} "
+        if padded_old in body:
+            neg = body.replace(padded_old, f"({new_op} ", 1)
+            if neg != body:
+                negatives.append(_wrap(neg))
+                if len(negatives) >= count:
+                    return negatives
+
+    return negatives
+
+
 def extract_from_benchmark(
     benchmark: Path,
-    cvc5_binary: str,
+    cvc4_binary: str,
     timeout_seconds: int,
     root: Path,
+    max_neg_per_benchmark: int,
 ) -> list[TrainingSample]:
     samples: list[TrainingSample] = []
     try:
@@ -128,29 +261,21 @@ def extract_from_benchmark(
     except ValueError:
         relative = str(benchmark)
 
-    tlimit = f"--tlimit={timeout_seconds * 1000}"
+    tlimit_ms = timeout_seconds * 1000
 
-    # Pass 1: run cvc5 normally to get the solution (positive sample).
-    rc_normal, stdout_normal, _ = _run_cvc5(
-        [cvc5_binary, tlimit, str(benchmark)],
+    # Pass 1: run CVC4 with --lang=sygus1 to get the solution (positive sample).
+    rc_cvc4, stdout_cvc4, _ = _run_solver(
+        [cvc4_binary, "--lang=sygus1", f"--tlimit={tlimit_ms}", str(benchmark)],
         timeout_seconds,
     )
-    solution = _parse_solution(stdout_normal) if rc_normal == 0 else None
+    solution = _parse_solution(stdout_cvc4) if rc_cvc4 == 0 else None
 
-    # Pass 2: run with -o sygus --sygus-si=none to get enumeration trace.
-    rc_enum, stdout_enum, _ = _run_cvc5(
-        [cvc5_binary, "-o", "sygus", "--sygus-si=none", tlimit, str(benchmark)],
-        timeout_seconds,
-    )
-    candidates = _parse_candidates(stdout_enum)
+    # Generate negative candidates by perturbing the solution.
+    neg_candidates: list[str] = []
+    if solution:
+        neg_candidates = _generate_negative_candidates(solution, max_neg_per_benchmark)
 
-    # Also collect candidates from the enum run's solution if it solved.
-    if rc_enum == 0:
-        enum_solution = _parse_solution(stdout_enum)
-        if enum_solution and not solution:
-            solution = enum_solution
-
-    for idx, cand in enumerate(candidates):
+    for idx, cand in enumerate(neg_candidates):
         samples.append(TrainingSample(
             benchmark=relative,
             candidate=cand,
@@ -163,20 +288,21 @@ def extract_from_benchmark(
             benchmark=relative,
             candidate=solution,
             label=1,
-            candidate_index=len(candidates),
+            candidate_index=len(neg_candidates),
         ))
 
     return samples
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Extract SyGuS training data from cvc5 traces")
+    parser = argparse.ArgumentParser(description="Extract SyGuS training data")
     parser.add_argument("benchmark_root", type=Path)
     parser.add_argument("--year", default=None)
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT)
     parser.add_argument("--workers", type=int, default=DEFAULT_WORKERS)
     parser.add_argument("--max-benchmarks", type=int, default=0)
-    parser.add_argument("--cvc5", default=DEFAULT_CVC5)
+    parser.add_argument("--max-neg-per-benchmark", type=int, default=50)
+    parser.add_argument("--cvc4", default=DEFAULT_CVC4)
     parser.add_argument("--output", "-o", type=Path, default=Path("training-data.jsonl"))
     args = parser.parse_args()
 
@@ -188,7 +314,8 @@ def main() -> None:
     print(f"Benchmarks: {len(benchmarks)}")
     print(f"Workers: {args.workers}")
     print(f"Timeout: {args.timeout}s")
-    print(f"cvc5: {args.cvc5}")
+    print(f"CVC4: {args.cvc4}")
+    print(f"Max negatives/benchmark: {args.max_neg_per_benchmark}")
     print(f"Output: {args.output}")
 
     total_samples = 0
@@ -206,9 +333,10 @@ def main() -> None:
                 executor.submit(
                     extract_from_benchmark,
                     bench,
-                    args.cvc5,
+                    args.cvc4,
                     args.timeout,
                     args.benchmark_root,
+                    args.max_neg_per_benchmark,
                 ): bench
                 for bench in benchmarks
             }
