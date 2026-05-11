@@ -1,6 +1,5 @@
 .idea/
 .vscode/
-agent/
 
 cmake-build-*/
 build/

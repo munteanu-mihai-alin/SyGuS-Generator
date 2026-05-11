@@ -266,3 +266,86 @@ Suggested commit:
 ```bash
 git commit -m "add solver and ci deps flow"
 ```
+
+## [2026-05-11] - Refresh handoff state after benchmark-runner fix and Windows DLL investigation
+
+Model / agent:
+- GPT-5.5 Thinking, reasoning model
+
+Source state:
+- Local repository on `main` after commit `3492071`
+
+User request:
+- Keep the agent handoff log current after the recent benchmark-runner work and the direct `cvc5` / solver runs on real SyGuS competition benchmarks.
+
+Files changed:
+- `AGENT_HANDOFF_LOG.md` - recorded the current benchmark-runner state, the Windows DLL finding, and the remaining parser blocker
+
+Deletions / removals:
+- none
+
+Steps taken:
+1. Inspected the existing handoff log, current Git history, and worktree state to identify the missing project history.
+2. Verified the current benchmark runner behavior from plain PowerShell using the real benchmark tree under `third-party/sygus-benchmarks`.
+3. Confirmed that `cvc5` runs successfully from `D:\cvc5-Win64-static\bin\cvc5.exe`.
+4. Confirmed that the UCRT-built local solver initially failed with Windows loader error `0xC0000135` when the MSYS2 UCRT runtime DLL directory was not on `PATH`.
+5. Confirmed that the updated benchmark runner now injects `D:\msys64\ucrt64\bin` into child-process `PATH` automatically when it discovers `build-ucrt\sygus_solve.exe`, which removes the missing-DLL failure from benchmark runs.
+6. Isolated the next real blocker after the DLL fix: the parser/solver still rejects a real SyGuS competition benchmark with the message `synth-fun expects four arguments`, while `cvc5` solves the same benchmark.
+
+Validation performed:
+- `python scripts/run_sygus_benchmarks.py third-party/sygus-benchmarks --year 2017 --max-benchmarks 1`
+  - confirmed the runner executes both the local solver and `cvc5`
+- direct `build-ucrt\sygus_solve.exe` invocation from plain PowerShell
+  - reproduced `STATUS_DLL_NOT_FOUND` before the runtime-path injection fix
+- direct `cvc5` invocation on:
+  - `third-party/sygus-benchmarks/comp/2017/CLIA_Track/fg_array_search_10.sl`
+  - confirmed `cvc5` returns a valid solution
+- reran the benchmark runner after the runtime-path fix
+  - confirmed the missing-DLL issue is gone and the remaining failure is a real parser/solver error, not a Windows loader crash
+
+Known risks / follow-up:
+- The benchmark runner is now in a usable state for bulk measurement, but the solver still cannot parse at least some real competition benchmarks that use the short `synth-fun` form without an explicit grammar.
+- The next concrete code fix should be in `src/sygus_parser.cpp`, so that real competition benchmarks like `fg_array_search_10.sl` parse successfully before further solver-vs-`cvc5` evaluation.
+- Local IDE files remain user-local and were intentionally not folded into project history:
+  - `.idea/.name`
+  - `.idea/editor.xml`
+
+Suggested commit:
+```bash
+git commit -m "docs: refresh handoff log"
+```
+
+## [2026-05-11] - Move handoff log under agent/
+
+Model / agent:
+- GPT-5.5 Thinking, reasoning model
+
+Source state:
+- Local repository on `main` after commit `3492071`
+
+User request:
+- Move the handoff log under `agent/` so it lives with the rest of the agent workflow files.
+
+Files changed:
+- `agent/AGENT_HANDOFF_LOG.md` - moved the handoff log from the repository root into `agent/`
+- `.gitignore` - replaced the blanket `agent/` ignore with narrow rules that still track the agent workflow files and the handoff log
+
+Deletions / removals:
+- Removed the old root path `AGENT_HANDOFF_LOG.md`
+
+Steps taken:
+1. Inspected current references to the handoff log and the existing `agent/` ignore rules.
+2. Moved the handoff log into `agent/` beside `AGENT_WORKFLOW.md`.
+3. Updated `.gitignore` so `agent/AGENT_HANDOFF_LOG.md` remains a normal tracked project file.
+
+Validation performed:
+- Verified the new path lives under `D:\SyGuS-Generator\agent`
+- Verified the old root path is no longer the source of truth
+
+Known risks / follow-up:
+- Any future references should use `agent/AGENT_HANDOFF_LOG.md` rather than the old root path.
+
+Suggested commit:
+```bash
+git commit -m "move handoff log"
+```
