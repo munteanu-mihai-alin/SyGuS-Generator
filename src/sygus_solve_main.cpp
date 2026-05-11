@@ -9,8 +9,8 @@ namespace {
 
 void printUsage() {
   std::cout << "Usage: sygus_solve [--json] [--max-expression-size N] "
-               "[--max-candidates N] [--max-samples N] [--no-cvc5-verify] "
-               "<input-file>\n";
+               "[--max-candidates N] [--max-cegis-rounds N] [--max-samples N] "
+               "[--no-cvc5-verify] <input-file>\n";
 }
 
 bool parseSize(const std::string& text, size_t& output) {
@@ -60,6 +60,9 @@ void printJson(const SolveResult& result) {
   std::cout << "  \"enumerated_candidates\": " << result.enumerated_candidates
             << ",\n";
   std::cout << "  \"tested_candidates\": " << result.tested_candidates << ",\n";
+  std::cout << "  \"cegis_rounds\": " << result.cegis_rounds << ",\n";
+  std::cout << "  \"counterexamples_found\": " << result.counterexamples_found
+            << ",\n";
   std::cout << "  \"cvc5_available\": "
             << (result.cvc5_available ? "true" : "false") << ",\n";
   std::cout << "  \"cvc5_verified\": "
@@ -77,6 +80,9 @@ void printText(const SolveResult& result) {
   std::cout << "enumerated-candidates: " << result.enumerated_candidates
             << "\n";
   std::cout << "tested-candidates: " << result.tested_candidates << "\n";
+  std::cout << "cegis-rounds: " << result.cegis_rounds << "\n";
+  std::cout << "counterexamples-found: " << result.counterexamples_found
+            << "\n";
   if (!result.message.empty()) {
     std::cout << "message: " << result.message << "\n";
   }
@@ -109,6 +115,13 @@ int main(int argc, char* argv[]) {
       if (index + 1 >= argc ||
           !parseSize(argv[index + 1], options.max_candidates)) {
         std::cerr << "Invalid value for --max-candidates\n";
+        return 2;
+      }
+      ++index;
+    } else if (argument == "--max-cegis-rounds") {
+      if (index + 1 >= argc ||
+          !parseSize(argv[index + 1], options.max_cegis_rounds)) {
+        std::cerr << "Invalid value for --max-cegis-rounds\n";
         return 2;
       }
       ++index;

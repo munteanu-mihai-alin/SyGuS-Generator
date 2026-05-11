@@ -5,7 +5,9 @@ import gzip
 import json
 import os
 import shutil
+import signal
 import subprocess
+import sys
 import tempfile
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -191,18 +193,25 @@ def run_command(
     try:
         command = template.format(input=str(materialized_path))
         start = time.perf_counter()
+        popen_kwargs: dict[str, Any] = dict(
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=env,
+        )
+        if sys.platform == "win32":
+            popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        else:
+            popen_kwargs["start_new_session"] = True
+
+        import shlex
+        args = command if sys.platform == "win32" else shlex.split(command)
+        proc = subprocess.Popen(args, **popen_kwargs)
         try:
-            completed = subprocess.run(
-                command,
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=timeout_seconds,
-                env=env,
-            )
+            stdout, stderr = proc.communicate(timeout=timeout_seconds)
             duration_ms = int((time.perf_counter() - start) * 1000)
-            payload = parse_json_payload(completed.stdout) if parse_json else None
-            if completed.returncode != 0:
+            payload = parse_json_payload(stdout) if parse_json else None
+            if proc.returncode != 0:
                 status = "failed"
             elif payload is not None and isinstance(payload.get("status"), str):
                 status = str(payload["status"])
@@ -210,21 +219,26 @@ def run_command(
                 status = "ok"
             return CommandResult(
                 status=status,
-                exit_code=completed.returncode,
+                exit_code=proc.returncode,
                 duration_ms=duration_ms,
-                stdout=completed.stdout,
-                stderr=completed.stderr,
+                stdout=stdout,
+                stderr=stderr,
                 command=command,
                 parsed=payload,
             )
-        except subprocess.TimeoutExpired as error:
+        except subprocess.TimeoutExpired:
+            if sys.platform == "win32":
+                proc.kill()
+            else:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            stdout, stderr = proc.communicate()
             duration_ms = int((time.perf_counter() - start) * 1000)
             return CommandResult(
                 status="timeout",
                 exit_code=None,
                 duration_ms=duration_ms,
-                stdout=error.stdout or "",
-                stderr=error.stderr or "",
+                stdout=stdout or "",
+                stderr=stderr or "",
                 command=command,
             )
     finally:

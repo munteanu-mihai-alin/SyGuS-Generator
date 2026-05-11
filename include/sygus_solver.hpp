@@ -6,8 +6,9 @@
 #include "sygus_parser.hpp"
 
 struct SolveOptions {
-  size_t max_expression_size = 6;
-  size_t max_candidates = 5000;
+  size_t max_expression_size = 8;
+  size_t max_candidates = 50000;
+  size_t max_cegis_rounds = 200;
   size_t max_sample_assignments = 128;
   bool require_cvc5_verification = true;
 };
@@ -27,6 +28,8 @@ struct SolveResult {
   std::string define_fun;
   size_t enumerated_candidates = 0;
   size_t tested_candidates = 0;
+  size_t cegis_rounds = 0;
+  size_t counterexamples_found = 0;
   bool cvc5_available = false;
   bool cvc5_verified = false;
 };

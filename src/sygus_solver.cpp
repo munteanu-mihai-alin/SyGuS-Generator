@@ -1050,10 +1050,36 @@ cvc5::Term translateExpression(cvc5::Solver& solver, const SExpr& expr,
   return translateBuiltin(solver, head, args);
 }
 
-bool verifyWithCvc5(const SyGuSProgram& program, const SynthFun& synth_fun,
-                    const SExpr& candidate, std::string& message) {
+enum class VerifyStatus { Valid, Counterexample, Unknown, Error };
+
+struct VerifyResult {
+  VerifyStatus status = VerifyStatus::Error;
+  std::string message;
+  ValueEnvironment counterexample;
+};
+
+Value cvc5TermToValue(const cvc5::Term& term, const SortDescriptor& sort) {
+  switch (sort.kind) {
+    case ValueKind::Int:
+      return Value::makeInt(
+          static_cast<int64_t>(std::stoll(term.getIntegerValue())));
+    case ValueKind::Bool:
+      return Value::makeBool(term.getBooleanValue());
+    case ValueKind::BitVec:
+      return Value::makeBitVector(
+          static_cast<uint64_t>(
+              std::stoull(term.getBitVectorValue(), nullptr, 2)),
+          sort.bit_width);
+  }
+  return Value::makeInt(0);
+}
+
+VerifyResult verifyWithCvc5(const SyGuSProgram& program,
+                            const SynthFun& synth_fun, const SExpr& candidate) {
+  VerifyResult verify;
   cvc5::Solver solver;
   solver.setLogic(program.logic.empty() ? "ALL" : program.logic);
+  solver.setOption("produce-models", "true");
 
   DefineFunMap define_funs;
   for (const auto& define_fun : program.define_funs) {
@@ -1061,14 +1087,18 @@ bool verifyWithCvc5(const SyGuSProgram& program, const SynthFun& synth_fun,
   }
 
   TermEnvironment env;
+  std::vector<std::pair<std::string, SortDescriptor>> var_sorts;
   for (const auto& variable : program.declare_vars) {
     const auto sort = parseSort(variable.sort);
     if (!sort.has_value()) {
-      message = "Unsupported declared variable sort: " + variable.type;
-      return false;
+      verify.status = VerifyStatus::Error;
+      verify.message = "Unsupported declared variable sort: " + variable.type;
+      return verify;
     }
-    env.emplace(variable.name,
-                solver.mkConst(translateSort(solver, *sort), variable.name));
+    cvc5::Term var =
+        solver.mkConst(translateSort(solver, *sort), variable.name);
+    env.emplace(variable.name, var);
+    var_sorts.emplace_back(variable.name, *sort);
   }
 
   std::vector<cvc5::Term> constraints;
@@ -1080,8 +1110,9 @@ bool verifyWithCvc5(const SyGuSProgram& program, const SynthFun& synth_fun,
                                                 &candidate));
     }
   } catch (const std::exception& exception) {
-    message = exception.what();
-    return false;
+    verify.status = VerifyStatus::Error;
+    verify.message = exception.what();
+    return verify;
   }
 
   cvc5::Term conjunction = solver.mkBoolean(true);
@@ -1094,15 +1125,24 @@ bool verifyWithCvc5(const SyGuSProgram& program, const SynthFun& synth_fun,
 
   const cvc5::Result result = solver.checkSat();
   if (result.isUnsat()) {
-    return true;
+    verify.status = VerifyStatus::Valid;
+    return verify;
   }
   if (result.isSat()) {
-    message = "cvc5 found a counterexample for the candidate";
-    return false;
+    verify.status = VerifyStatus::Counterexample;
+    for (const auto& [name, sort] : var_sorts) {
+      try {
+        cvc5::Term model_value = solver.getValue(env.at(name));
+        verify.counterexample[name] = cvc5TermToValue(model_value, sort);
+      } catch (...) {
+      }
+    }
+    return verify;
   }
 
-  message = "cvc5 returned unknown while verifying the candidate";
-  return false;
+  verify.status = VerifyStatus::Unknown;
+  verify.message = "cvc5 returned unknown while verifying the candidate";
+  return verify;
 }
 #endif
 
@@ -1187,26 +1227,35 @@ SolveResult SyGuSSolver::solve(const SyGuSProgram& program,
 
   const std::string start_symbol = synth_fun.grammar_rules.front().non_terminal;
   const SamplePool sample_pool = buildSamplePool(program);
+
   std::vector<ValueEnvironment> param_samples =
       buildAssignments(synth_fun.params, sample_pool,
                        std::max<size_t>(1, options.max_sample_assignments));
 
-  std::vector<ValueEnvironment> constraint_samples =
+  std::vector<ValueEnvironment> seed_samples =
       buildAssignments(asTypedIdentifiers(program.declare_vars), sample_pool,
                        std::max<size_t>(1, options.max_sample_assignments));
 
-  if (param_samples.empty() || constraint_samples.empty()) {
+  if (param_samples.empty() || seed_samples.empty()) {
     result.status = SolveResult::Status::Unsupported;
     result.message =
         "Unable to build sample assignments for the current benchmark.";
     return result;
   }
 
+  // CEGIS counterexample set — seeded with sample assignments, then grown by
+  // counterexamples extracted from failed SMT verification rounds.
+  std::vector<ValueEnvironment> counterexamples = seed_samples;
+
+  // Bottom-up enumeration bank, shared across CEGIS rounds.
   std::unordered_map<std::string,
                      std::unordered_map<size_t, std::vector<SExpr>>>
       expressions_by_symbol_and_size;
   std::unordered_map<std::string, std::unordered_set<std::string>>
       seen_signatures_by_symbol;
+
+  // Pre-enumerate all expressions up to the size budget.
+  std::vector<SExpr> candidate_pool;
 
   for (size_t size = 1; size <= options.max_expression_size; ++size) {
     for (const auto& rule : synth_fun.grammar_rules) {
@@ -1228,65 +1277,86 @@ SolveResult SyGuSSolver::solve(const SyGuSProgram& program,
 
         expressions_by_symbol_and_size[rule.non_terminal][size].push_back(expr);
 
-        if (rule.non_terminal != start_symbol) {
-          continue;
-        }
-
-        ++result.enumerated_candidates;
-
-        std::string sample_error;
-        if (!satisfiesConstraintsOnSamples(program, synth_fun, expr,
-                                           constraint_samples, sample_error)) {
-          continue;
-        }
-
-        ++result.tested_candidates;
-        bool exact_match = true;
-        std::string verification_message;
-
-        if (options.require_cvc5_verification) {
-#if SYGUS_HAVE_CVC5
-          exact_match =
-              verifyWithCvc5(program, synth_fun, expr, verification_message);
-          result.cvc5_verified = exact_match;
-#else
-          exact_match = true;
-          verification_message =
-              "cvc5 verification was requested but this build has no cvc5; "
-              "the candidate is sample-validated only.";
-#endif
-        }
-
-        if (exact_match || !options.require_cvc5_verification) {
-          result.status = SolveResult::Status::Solved;
-          result.solution = expr.toString();
-          result.define_fun = renderDefineFun(synth_fun, expr);
-          if (!options.require_cvc5_verification &&
-              !verification_message.empty()) {
-            result.message = verification_message;
-          }
-          return result;
-        }
-
-        if (!verification_message.empty()) {
-          result.message = verification_message;
-        }
-
-        if (result.tested_candidates >= options.max_candidates) {
-          result.status = SolveResult::Status::Exhausted;
-          result.message =
-              "Reached the verified-candidate budget before finding a "
-              "solution.";
-          return result;
+        if (rule.non_terminal == start_symbol) {
+          candidate_pool.push_back(expr);
         }
       }
     }
   }
 
-  result.status = SolveResult::Status::Exhausted;
-  if (result.message.empty()) {
-    result.message =
-        "No candidate satisfied the search budget for the current benchmark.";
+  result.enumerated_candidates = candidate_pool.size();
+
+  DefineFunMap define_funs;
+  for (const auto& define_fun : program.define_funs) {
+    define_funs.emplace(define_fun.name, &define_fun);
   }
+
+  // CEGIS loop: repeatedly scan candidates against the growing counterexample
+  // set, then verify survivors with SMT.
+  for (size_t round = 0; round < options.max_cegis_rounds; ++round) {
+    ++result.cegis_rounds;
+
+    const SExpr* best_candidate = nullptr;
+    for (const auto& expr : candidate_pool) {
+      std::string sample_error;
+      if (satisfiesConstraintsOnSamples(program, synth_fun, expr,
+                                        counterexamples, sample_error)) {
+        best_candidate = &expr;
+        break;
+      }
+    }
+
+    if (best_candidate == nullptr) {
+      result.status = SolveResult::Status::Exhausted;
+      result.message =
+          "No candidate in the enumeration bank satisfies all counterexamples.";
+      return result;
+    }
+
+    ++result.tested_candidates;
+
+    if (!options.require_cvc5_verification) {
+      result.status = SolveResult::Status::Solved;
+      result.solution = best_candidate->toString();
+      result.define_fun = renderDefineFun(synth_fun, *best_candidate);
+      result.message = "Sample-validated only (no SMT verification).";
+      return result;
+    }
+
+#if SYGUS_HAVE_CVC5
+    VerifyResult verify = verifyWithCvc5(program, synth_fun, *best_candidate);
+
+    if (verify.status == VerifyStatus::Valid) {
+      result.status = SolveResult::Status::Solved;
+      result.solution = best_candidate->toString();
+      result.define_fun = renderDefineFun(synth_fun, *best_candidate);
+      result.cvc5_verified = true;
+      return result;
+    }
+
+    if (verify.status == VerifyStatus::Counterexample) {
+      counterexamples.push_back(std::move(verify.counterexample));
+      ++result.counterexamples_found;
+      continue;
+    }
+
+    result.status = SolveResult::Status::Error;
+    result.message = verify.message;
+    return result;
+#else
+    result.status = SolveResult::Status::Solved;
+    result.solution = best_candidate->toString();
+    result.define_fun = renderDefineFun(synth_fun, *best_candidate);
+    result.message =
+        "cvc5 verification was requested but this build has no cvc5; "
+        "the candidate is sample-validated only.";
+    return result;
+#endif
+  }
+
+  result.status = SolveResult::Status::Exhausted;
+  result.message = "Reached the CEGIS round limit (" +
+                   std::to_string(options.max_cegis_rounds) +
+                   ") without finding a valid solution.";
   return result;
 }
